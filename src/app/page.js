@@ -33,11 +33,8 @@ export default function Home() {
   const [historyData, setHistoryData] = useState([]);
   const [editingHistLog, setEditingHistLog] = useState(null); 
   const [copied, setCopied] = useState(false);
-  
-  // Estados para los acordeones
   const [expandedDates, setExpandedDates] = useState({}); 
   const [selectedDates, setSelectedDates] = useState({}); 
-  const [expandedRoutines, setExpandedRoutines] = useState({}); // Nuevo estado para rutinas
 
   const [importCode, setImportCode] = useState('');
 
@@ -67,7 +64,6 @@ export default function Home() {
       
       if (!error && data) {
         setRoutines(data);
-        // Inicializamos el estado de rutinas abiertas/cerradas (la primera abierta)
         setExpandedRoutines(prev => {
           const next = { ...prev };
           data.forEach((r, idx) => {
@@ -100,56 +96,20 @@ export default function Home() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); };
 
-  // ==========================================
-  // CLONAR RUTINA POR CÓDIGO
-  // ==========================================
   const handleImportRoutine = async () => {
     if (!importCode.trim()) return;
     setLoading(true);
-
-    const { data: originalRoutine, error: rError } = await supabase
-      .from('routines')
-      .select('*, routine_exercises(*)')
-      .eq('share_code', importCode.trim())
-      .single();
-
-    if (rError || !originalRoutine) {
-      alert("No se encontró ninguna rutina con ese código.");
-      setLoading(false);
-      return;
-    }
-
-    const { data: newRoutine, error: nError } = await supabase
-      .from('routines')
-      .insert([{ name: originalRoutine.name + " (Copia)" }])
-      .select()
-      .single();
-
-    if (nError) {
-      alert("Error al clonar: " + nError.message);
-      setLoading(false);
-      return;
-    }
-
+    const { data: originalRoutine, error: rError } = await supabase.from('routines').select('*, routine_exercises(*)').eq('share_code', importCode.trim()).single();
+    if (rError || !originalRoutine) { alert("No se encontró ninguna rutina con ese código."); setLoading(false); return; }
+    const { data: newRoutine, error: nError } = await supabase.from('routines').insert([{ name: originalRoutine.name + " (Copia)" }]).select().single();
+    if (nError) { alert("Error al clonar: " + nError.message); setLoading(false); return; }
     const newExercises = originalRoutine.routine_exercises.map(ex => ({
-      routine_id: newRoutine.id,
-      name: ex.name,
-      day_name: ex.day_name,
-      sort_order: ex.sort_order,
-      target_sets: ex.target_sets,
-      target_reps: ex.target_reps,
-      target_rir: ex.target_rir
+      routine_id: newRoutine.id, name: ex.name, day_name: ex.day_name, sort_order: ex.sort_order, target_sets: ex.target_sets, target_reps: ex.target_reps, target_rir: ex.target_rir
     }));
-
     await supabase.from('routine_exercises').insert(newExercises);
-    
-    alert("¡Rutina importada con éxito!");
-    setImportCode('');
-    fetchRoutines();
-    setLoading(false);
+    alert("¡Rutina importada con éxito!"); setImportCode(''); fetchRoutines(); setLoading(false);
   };
 
-  // --- HISTORIAL ---
   const handleOpenHistory = async () => {
     setLoading(true); setEditingHistLog(null);
     const { data, error } = await supabase.from('workout_logs').select(`id, weight, reps, rir, set_number, created_at, routine_exercises (name)`).order('created_at', { ascending: false }).limit(300);
@@ -159,13 +119,9 @@ export default function Home() {
         if (!acc[dateStr]) acc[dateStr] = {};
         const exName = log.routine_exercises?.name || 'Ejercicio borrado';
         if (!acc[dateStr][exName]) acc[dateStr][exName] = [];
-        acc[dateStr][exName].push(log);
-        return acc;
+        acc[dateStr][exName].push(log); return acc;
       }, {});
-      const historyArray = Object.keys(grouped).map(date => ({
-        date,
-        exercises: Object.keys(grouped[date]).map(name => ({ name, logs: grouped[date][name].sort((a, b) => a.set_number - b.set_number) }))
-      }));
+      const historyArray = Object.keys(grouped).map(date => ({ date, exercises: Object.keys(grouped[date]).map(name => ({ name, logs: grouped[date][name].sort((a, b) => a.set_number - b.set_number) })) }));
       setHistoryData(historyArray);
       const initialExpanded = {}; const initialSelected = {};
       historyArray.forEach((d, idx) => { initialExpanded[d.date] = idx === 0; initialSelected[d.date] = false; });
@@ -202,7 +158,6 @@ export default function Home() {
     setEditingHistLog(null); await handleOpenHistory(); 
   };
 
-  // --- RUTINAS ---
   const handleOpenCreate = () => {
     setEditingRoutineId(null); setNewRoutineName('');
     setRoutineDays([{ dayName: 'Día 1', exercises: [{ id: null, name: '', targetSets: '', targetReps: '', targetRir: '' }] }]);
@@ -264,7 +219,6 @@ export default function Home() {
     setView('dashboard'); fetchRoutines(); setLoading(false);
   };
 
-  // --- ENTRENAMIENTO ---
   const loadDefaultsForExercise = async (exId, currentSessionLogsParam) => {
     const logsThisSession = currentSessionLogsParam.filter(l => l.routine_exercise_id === exId);
     if (logsThisSession.length > 0) {
@@ -333,12 +287,14 @@ export default function Home() {
   };
 
   // --- RENDERS ---
-  if (loading) return <div className="flex h-screen items-center justify-center bg-black"><div className="w-8 h-8 border-4 border-gray-800 border-t-blue-500 rounded-full animate-spin"></div></div>;
+  const [expandedRoutines, setExpandedRoutines] = useState({}); 
+
+  if (loading) return <div className="flex h-[100dvh] items-center justify-center bg-black"><div className="w-8 h-8 border-4 border-gray-800 border-t-blue-500 rounded-full animate-spin"></div></div>;
 
   if (!session) {
     return (
-      <div className="flex flex-col min-h-screen bg-black px-6 justify-center">
-        <div className="w-full max-w-sm mx-auto">
+      <div className="flex flex-col min-h-[100dvh] bg-black px-6 justify-center">
+        <div className="w-full max-w-sm mx-auto pb-10">
           <h1 className="text-5xl font-black text-white tracking-tighter mb-10">Gym<span className="text-blue-500">PWA</span></h1>
           <form className="space-y-4">
             <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-gray-900 text-white px-5 py-4 rounded-2xl border border-gray-800 outline-none" required />
@@ -354,7 +310,7 @@ export default function Home() {
   if (view === 'history') {
     const selectedCount = Object.values(selectedDates).filter(Boolean).length;
     return (
-      <div className="flex flex-col h-screen bg-black px-6 pt-10 pb-6 animate-in fade-in">
+      <div className="flex flex-col h-[100dvh] bg-black px-6 pt-10 pb-6 animate-in fade-in">
         <header className="flex justify-between items-center mb-8 shrink-0">
           <button onClick={() => setView('dashboard')} className="text-gray-400 p-2 -ml-2 text-lg">← Volver</button>
           <span className="text-white font-bold">Historial</span>
@@ -410,9 +366,9 @@ export default function Home() {
 
   if (view === 'creating') {
     return (
-      <div className="flex flex-col h-screen bg-black px-6 pt-10 pb-6 animate-in fade-in">
-        <header className="flex justify-between items-center mb-8"><button onClick={() => setView('dashboard')} className="text-gray-400 p-2 -ml-2 text-lg">← Volver</button><span className="text-white font-bold">{editingRoutineId ? 'Editar' : 'Nueva'}</span><div className="w-10"></div></header>
-        <div className="flex-1 overflow-y-auto space-y-8 hide-scrollbar">
+      <div className="flex flex-col h-[100dvh] bg-black px-6 pt-10 pb-6 animate-in fade-in">
+        <header className="flex justify-between items-center mb-8 shrink-0"><button onClick={() => setView('dashboard')} className="text-gray-400 p-2 -ml-2 text-lg">← Volver</button><span className="text-white font-bold">{editingRoutineId ? 'Editar' : 'Nueva'}</span><div className="w-10"></div></header>
+        <div className="flex-1 overflow-y-auto space-y-8 hide-scrollbar pb-6">
           <input type="text" placeholder="Nombre de la rutina" value={newRoutineName} onChange={(e) => setNewRoutineName(e.target.value)} className="w-full bg-gray-900 text-white px-5 py-4 rounded-2xl border border-gray-800 outline-none text-xl font-bold"/>
           <div className="space-y-6">
             {routineDays.map((day, dIdx) => (
@@ -440,7 +396,7 @@ export default function Home() {
           </div>
           <button onClick={() => setRoutineDays([...routineDays, { dayName: `Día ${routineDays.length + 1}`, exercises: [{ id: null, name: '', targetSets: '', targetReps: '', targetRir: '' }] }])} className="w-full py-4 rounded-2xl bg-gray-800 text-white font-bold">+ Nuevo Día</button>
         </div>
-        <button onClick={handleSaveRoutine} className="w-full bg-blue-600 text-white font-bold text-xl px-5 py-5 rounded-3xl mt-4">Guardar</button>
+        <button onClick={handleSaveRoutine} className="w-full bg-blue-600 text-white font-bold text-xl px-5 py-5 rounded-3xl mt-4 shrink-0">Guardar</button>
       </div>
     );
   }
@@ -451,14 +407,14 @@ export default function Home() {
     const currentExLogs = sessionLogs.filter(log => log.routine_exercise_id === activeEx.id);
 
     return (
-      <div className="flex flex-col h-screen bg-black px-6 pt-10 pb-6 animate-in fade-in">
+      <div className="flex flex-col h-[100dvh] bg-black px-6 pt-10 pb-6 animate-in fade-in">
         <header className="flex justify-between items-center mb-8 shrink-0">
           <button onClick={() => setView('dashboard')} className="text-gray-400 p-2 -ml-2 text-lg">← Salir</button>
           <span className="text-white font-bold bg-gray-900 px-4 py-1 rounded-full text-xs border border-gray-800">EJERCICIO {currentExIndex + 1}/{activeExercises.length}</span>
           <div className="w-10"></div>
         </header>
 
-        <div className="flex-1 overflow-y-auto hide-scrollbar">
+        <div className="flex-1 overflow-y-auto hide-scrollbar pb-10">
           <h2 className="text-4xl font-black text-white mb-1 tracking-tight">{activeEx.name}</h2>
           <p className="text-blue-500 font-bold mb-1 uppercase tracking-wider">
             {editingLogId ? `EDITANDO SERIE ${currentSet}` : `SERIE ${currentSet}`}
@@ -512,8 +468,8 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-black px-6 pt-10 pb-6 animate-in fade-in">
-      <header className="flex justify-between items-start mb-8">
+    <div className="flex flex-col h-[100dvh] bg-black px-6 pt-10 pb-6 animate-in fade-in">
+      <header className="flex justify-between items-start mb-8 shrink-0">
         <div>
           <h1 className="text-3xl font-black text-white tracking-tight">GymPWA</h1>
           <p className="text-sm font-medium text-gray-500 mt-1 truncate max-w-[200px]">{session.user.email}</p>
@@ -524,8 +480,7 @@ export default function Home() {
         </div>
       </header>
       
-      <div className="flex-1 overflow-y-auto space-y-6 hide-scrollbar">
-        {/* CAJÓN DE IMPORTAR */}
+      <div className="flex-1 overflow-y-auto space-y-6 hide-scrollbar pb-10">
         <div className="bg-blue-600/10 border border-blue-500/30 p-4 rounded-3xl flex gap-2">
           <input 
             type="text" 
@@ -556,8 +511,6 @@ export default function Home() {
             
             return (
               <div key={routine.id} className="bg-gray-900 p-5 rounded-3xl border border-gray-800 transition-all">
-                
-                {/* CABECERA DE LA RUTINA (ACORDEÓN) */}
                 <div 
                   className="flex justify-between items-start mb-4 cursor-pointer select-none"
                   onClick={() => setExpandedRoutines(prev => ({...prev, [routine.id]: !prev[routine.id]}))}
@@ -575,7 +528,6 @@ export default function Home() {
                   </div>
                 </div>
                 
-                {/* CONTENIDO DE LA RUTINA (DÍAS) */}
                 {expandedRoutines[routine.id] && (
                   <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
                     {Object.entries(daysMap).map(([dayName, exercises]) => (
@@ -584,8 +536,6 @@ export default function Home() {
                           <span className="text-blue-500 font-bold text-lg">{dayName}</span>
                           <span className="text-gray-600 text-xs font-bold">{exercises.length} ejercicios</span>
                         </div>
-                        
-                        {/* PREVISUALIZACIÓN DE EJERCICIOS */}
                         <div className="space-y-2 mb-4">
                           {exercises.map((ex, i) => (
                             <div key={i} className="flex justify-between items-center text-sm border-b border-gray-900 pb-1 last:border-0 last:pb-0">
@@ -596,7 +546,6 @@ export default function Home() {
                             </div>
                           ))}
                         </div>
-
                         <button onClick={() => handleStartTraining(exercises)} className="w-full bg-gray-800 text-white font-bold py-3 rounded-xl active:bg-gray-700 transition-colors">
                           Empezar
                         </button>
@@ -604,13 +553,12 @@ export default function Home() {
                     ))}
                   </div>
                 )}
-
               </div>
             );
           })
         )}
       </div>
-      <button onClick={handleOpenCreate} className="w-full bg-blue-600 text-white font-bold text-lg px-5 py-5 rounded-3xl mt-4">+ NUEVA RUTINA</button>
+      <button onClick={handleOpenCreate} className="w-full bg-blue-600 text-white font-bold text-lg px-5 py-5 rounded-3xl mt-4 shrink-0">+ NUEVA RUTINA</button>
     </div>
   );
 }
