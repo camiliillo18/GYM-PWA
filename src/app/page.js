@@ -723,14 +723,43 @@ export default function Home() {
                                 <div className="flex flex-col gap-3">
                                   <div className="flex justify-between items-center">
                                     <span className="text-gray-400 font-bold">Serie {log.set_number}</span>
-                                    <button onClick={() => deleteHistoryLog(log.id)} className="text-red-500 font-bold px-3 py-1 active:scale-95">Borrar</button>
+                                    <button onClick={() => deleteHistoryLog(log.id)} className="text-red-500 font-bold text-sm px-2 py-1 -mr-2 active:scale-95">Borrar</button>
                                   </div>
-                                  <Stepper label="PESO" value={Number(editingHistLog.weight) || 0} onChange={(v) => setEditingHistLog({...editingHistLog, weight: v})} step={2.5} unit="kg" />
-                                  <Stepper label="REPS" value={Number(editingHistLog.reps) || 0} onChange={(v) => setEditingHistLog({...editingHistLog, reps: v})} step={1} min={0} />
-                                  <Stepper label="RIR"  value={Number(editingHistLog.rir)  || 0} onChange={(v) => setEditingHistLog({...editingHistLog, rir:  v})} step={1} min={0} max={10} />
+                                  <div className="grid grid-cols-3 gap-2">
+                                    <label className="flex flex-col gap-1">
+                                      <span className="text-[10px] text-gray-500 uppercase font-bold ml-1">Peso</span>
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={editingHistLog.weight}
+                                        onChange={(e) => setEditingHistLog({ ...editingHistLog, weight: e.target.value })}
+                                        className="w-full min-w-0 bg-gray-900 text-white px-2 py-2 rounded-lg text-base text-center border border-gray-800 focus:border-blue-500 outline-none"
+                                      />
+                                    </label>
+                                    <label className="flex flex-col gap-1">
+                                      <span className="text-[10px] text-gray-500 uppercase font-bold ml-1">Reps</span>
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        value={editingHistLog.reps}
+                                        onChange={(e) => setEditingHistLog({ ...editingHistLog, reps: e.target.value })}
+                                        className="w-full min-w-0 bg-gray-900 text-white px-2 py-2 rounded-lg text-base text-center border border-gray-800 focus:border-blue-500 outline-none"
+                                      />
+                                    </label>
+                                    <label className="flex flex-col gap-1">
+                                      <span className="text-[10px] text-gray-500 uppercase font-bold ml-1">RIR</span>
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        value={editingHistLog.rir}
+                                        onChange={(e) => setEditingHistLog({ ...editingHistLog, rir: e.target.value })}
+                                        className="w-full min-w-0 bg-gray-900 text-white px-2 py-2 rounded-lg text-base text-center border border-gray-800 focus:border-blue-500 outline-none"
+                                      />
+                                    </label>
+                                  </div>
                                   <div className="flex gap-2">
-                                    <button onClick={() => setEditingHistLog(null)} className="flex-1 bg-gray-800 text-white py-3 rounded-lg font-bold active:scale-95">Cancelar</button>
-                                    <button onClick={saveHistoryLog} className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-bold active:scale-95">Guardar</button>
+                                    <button onClick={() => setEditingHistLog(null)} className="flex-1 bg-gray-800 text-white py-2 rounded-lg font-bold text-sm active:scale-95">Cancelar</button>
+                                    <button onClick={saveHistoryLog} className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-bold text-sm active:scale-95">Guardar</button>
                                   </div>
                                 </div>
                               ) : (
@@ -1016,20 +1045,20 @@ export default function Home() {
           </div>
         )}
 
-        <div className="bg-blue-600/10 border border-blue-500/30 p-4 rounded-3xl flex gap-2">
+        <div className="bg-blue-600/10 border border-blue-500/30 p-4 rounded-3xl flex gap-2 items-center">
           <input
             type="text"
             placeholder="Código de rutina"
             value={importCode}
             onChange={(e) => setImportCode(e.target.value)}
-            className="flex-1 bg-black text-white px-4 py-2 rounded-xl border border-gray-800 outline-none text-base"
+            className="flex-1 min-w-0 bg-black text-white px-4 py-2 rounded-xl border border-gray-800 outline-none text-base"
             autoCapitalize="characters"
             autoCorrect="off"
             spellCheck={false}
           />
-          <button 
+          <button
             onClick={handleImportRoutine}
-            className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-sm active:scale-95"
+            className="shrink-0 bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-sm active:scale-95"
           >
             Importar
           </button>
@@ -1048,49 +1077,50 @@ export default function Home() {
             }, {});
             
             return (
-              <div key={routine.id} className="bg-gray-900 p-5 rounded-3xl border border-gray-800 transition-all">
-                <div 
-                  className="flex justify-between items-start mb-4 cursor-pointer select-none"
+              <div key={routine.id} className="bg-gray-900 p-5 rounded-3xl border border-gray-800 transition-all overflow-hidden">
+                <div
+                  className="flex justify-between items-start gap-2 mb-3 cursor-pointer select-none"
                   onClick={() => setExpandedRoutines(prev => ({...prev, [routine.id]: !prev[routine.id]}))}
                 >
                   <div className="min-w-0 flex-1">
                     <h3 className="text-2xl font-black text-white break-words leading-tight">{routine.name}</h3>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleCopyShareCode(routine); }}
-                      className={`mt-1 inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-1 -mx-2 rounded-md active:scale-95 transition-colors ${copiedCodeId === routine.id ? 'text-green-400' : 'text-blue-500 active:text-blue-300'}`}
+                      className={`mt-1 inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-1 -ml-2 rounded-md active:scale-95 transition-colors max-w-full truncate ${copiedCodeId === routine.id ? 'text-green-400' : 'text-blue-500 active:text-blue-300'}`}
                       aria-label="Copiar código de rutina"
                     >
                       {copiedCodeId === routine.id ? '✓ Copiado' : <>🔗 {routine.share_code}</>}
                     </button>
-                    {routine.has_weekly_plan && (() => {
-                      const isDone = (routine.completed_weeks || []).includes(routine.current_week);
-                      return (
-                        <div className="mt-2 flex flex-wrap gap-2 items-center">
-                          <div className={`inline-flex items-center gap-1 pl-1 pr-1 rounded-full border ${isDone ? 'bg-green-600/10 border-green-500/30' : 'bg-blue-600/10 border-blue-500/30'}`}>
-                            <button aria-label="Semana anterior" onClick={(e) => { e.stopPropagation(); handleChangeCurrentWeek(routine, -1); }} className={`font-bold w-9 h-9 flex items-center justify-center text-base active:scale-90 ${isDone ? 'text-green-400' : 'text-blue-400'}`}>−</button>
-                            <span className={`font-bold text-[11px] px-1 ${isDone ? 'text-green-300' : 'text-blue-300'}`}>
-                              {isDone && '✓ '}Semana {routine.current_week}/{routine.total_weeks}
-                            </span>
-                            <button aria-label="Semana siguiente" onClick={(e) => { e.stopPropagation(); handleChangeCurrentWeek(routine, +1); }} className={`font-bold w-9 h-9 flex items-center justify-center text-base active:scale-90 ${isDone ? 'text-green-400' : 'text-blue-400'}`}>+</button>
-                          </div>
-                          {!isDone && (
-                            <button onClick={(e) => { e.stopPropagation(); handleCompleteWeek(routine); }} className="bg-green-600 text-white text-[11px] font-bold px-3 py-1 rounded-full active:scale-95 shadow-[0_0_10px_rgba(22,163,74,0.25)]">
-                              ✓ Completar Semana {routine.current_week}
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })()}
                   </div>
-                  <div className="flex gap-1.5 items-center shrink-0">
-                    <button aria-label="Programación semanal" onClick={(e) => { e.stopPropagation(); handleOpenProgramming(routine); }} className="bg-gray-800 w-11 h-11 flex items-center justify-center rounded-lg active:scale-90">📅</button>
-                    <button aria-label="Editar rutina" onClick={(e) => { e.stopPropagation(); handleEditRoutine(routine); }} className="bg-gray-800 w-11 h-11 flex items-center justify-center rounded-lg active:scale-90">✏️</button>
-                    <button aria-label="Borrar rutina" onClick={(e) => { e.stopPropagation(); handleDeleteRoutine(routine.id); }} className="bg-gray-800 w-11 h-11 flex items-center justify-center rounded-lg active:scale-90">🗑️</button>
-                    <div className="text-gray-500 font-bold text-3xl ml-1 w-6 text-center">
+                  <div className="flex gap-1 items-center shrink-0">
+                    <button aria-label="Programación semanal" onClick={(e) => { e.stopPropagation(); handleOpenProgramming(routine); }} className="bg-gray-800 w-10 h-10 flex items-center justify-center rounded-lg active:scale-90">📅</button>
+                    <button aria-label="Editar rutina" onClick={(e) => { e.stopPropagation(); handleEditRoutine(routine); }} className="bg-gray-800 w-10 h-10 flex items-center justify-center rounded-lg active:scale-90">✏️</button>
+                    <button aria-label="Borrar rutina" onClick={(e) => { e.stopPropagation(); handleDeleteRoutine(routine.id); }} className="bg-gray-800 w-10 h-10 flex items-center justify-center rounded-lg active:scale-90">🗑️</button>
+                    <div className="text-gray-500 font-bold text-2xl w-5 text-center leading-none">
                       {expandedRoutines[routine.id] ? '−' : '+'}
                     </div>
                   </div>
                 </div>
+
+                {routine.has_weekly_plan && (() => {
+                  const isDone = (routine.completed_weeks || []).includes(routine.current_week);
+                  return (
+                    <div className="mb-4 flex flex-wrap gap-2 items-center">
+                      <div className={`inline-flex items-center gap-1 pl-1 pr-1 rounded-full border ${isDone ? 'bg-green-600/10 border-green-500/30' : 'bg-blue-600/10 border-blue-500/30'}`}>
+                        <button aria-label="Semana anterior" onClick={(e) => { e.stopPropagation(); handleChangeCurrentWeek(routine, -1); }} className={`font-bold w-9 h-9 flex items-center justify-center text-base active:scale-90 ${isDone ? 'text-green-400' : 'text-blue-400'}`}>−</button>
+                        <span className={`font-bold text-[11px] px-1 whitespace-nowrap ${isDone ? 'text-green-300' : 'text-blue-300'}`}>
+                          {isDone && '✓ '}Semana {routine.current_week}/{routine.total_weeks}
+                        </span>
+                        <button aria-label="Semana siguiente" onClick={(e) => { e.stopPropagation(); handleChangeCurrentWeek(routine, +1); }} className={`font-bold w-9 h-9 flex items-center justify-center text-base active:scale-90 ${isDone ? 'text-green-400' : 'text-blue-400'}`}>+</button>
+                      </div>
+                      {!isDone && (
+                        <button onClick={(e) => { e.stopPropagation(); handleCompleteWeek(routine); }} className="bg-green-600 text-white text-[11px] font-bold px-3 py-1 rounded-full active:scale-95 shadow-[0_0_10px_rgba(22,163,74,0.25)] whitespace-nowrap">
+                          ✓ Completar
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
                 
                 {expandedRoutines[routine.id] && (
                   <div className="space-y-3 animate-in fade-in slide-in-from-top-2">

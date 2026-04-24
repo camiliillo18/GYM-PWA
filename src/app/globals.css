@@ -8,6 +8,7 @@
 html {
   background: #000;
   color-scheme: dark;
+  overflow-x: hidden;
 }
 
 body {
@@ -15,6 +16,7 @@ body {
   color: #ededed;
   font-family: var(--font-geist-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
   -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
 }
 
 /* iOS Safari no auto-zooma en inputs con font-size >= 16px */
