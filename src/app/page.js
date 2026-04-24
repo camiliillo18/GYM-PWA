@@ -50,6 +50,8 @@ export default function Home() {
   const [expandedRoutines, setExpandedRoutines] = useState({});
   const [copiedCodeId, setCopiedCodeId] = useState(null);
 
+  const [installPromptEvent, setInstallPromptEvent] = useState(null);
+
   const fetchRoutines = async () => {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
@@ -110,7 +112,24 @@ export default function Home() {
       setSession(session);
       if (session) fetchRoutines();
     });
-    return () => subscription.unsubscribe();
+
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+
+    const onBeforeInstall = (e) => {
+      e.preventDefault();
+      setInstallPromptEvent(e);
+    };
+    const onInstalled = () => setInstallPromptEvent(null);
+    window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    window.addEventListener('appinstalled', onInstalled);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
   }, []);
 
   const handleLogin = async (e) => {
@@ -633,6 +652,15 @@ export default function Home() {
     try { if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(ms); } catch {}
   };
 
+  const handleInstallPWA = async () => {
+    if (!installPromptEvent) return;
+    installPromptEvent.prompt();
+    try {
+      const { outcome } = await installPromptEvent.userChoice;
+      if (outcome === 'accepted') setInstallPromptEvent(null);
+    } catch {}
+  };
+
   const handleCopyShareCode = async (routine) => {
     try {
       await navigator.clipboard.writeText(routine.share_code || '');
@@ -972,10 +1000,26 @@ export default function Home() {
       </header>
       
       <div className="flex-1 overflow-y-auto space-y-6 hide-scrollbar pb-10">
+        {installPromptEvent && (
+          <div className="bg-green-600/10 border border-green-500/30 p-4 rounded-3xl flex items-center gap-3">
+            <span className="text-2xl shrink-0" aria-hidden="true">⬇</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-bold text-sm">Instalar GymPWA</p>
+              <p className="text-gray-400 text-xs truncate">Acceso rápido desde tu pantalla de inicio</p>
+            </div>
+            <button
+              onClick={handleInstallPWA}
+              className="bg-green-600 text-white font-bold px-4 py-2 rounded-xl text-sm active:scale-95 shrink-0"
+            >
+              Instalar
+            </button>
+          </div>
+        )}
+
         <div className="bg-blue-600/10 border border-blue-500/30 p-4 rounded-3xl flex gap-2">
-          <input 
-            type="text" 
-            placeholder="Código de rutina" 
+          <input
+            type="text"
+            placeholder="Código de rutina"
             value={importCode}
             onChange={(e) => setImportCode(e.target.value)}
             className="flex-1 bg-black text-white px-4 py-2 rounded-xl border border-gray-800 outline-none text-base"

@@ -21,8 +21,9 @@ export const metadata = {
     title: 'GymPWA',
   },
   icons: {
-    icon: [{ url: '/icon.svg', type: 'image/svg+xml', sizes: 'any' }],
-    apple: [{ url: '/apple-touch-icon.svg', type: 'image/svg+xml', sizes: '180x180' }],
+    icon: [{ url: '/icon.svg?v=4', type: 'image/svg+xml', sizes: 'any' }],
+    apple: [{ url: '/apple-touch-icon.svg?v=4', type: 'image/svg+xml', sizes: '180x180' }],
+    shortcut: [{ url: '/icon.svg?v=4', type: 'image/svg+xml' }],
   },
 };
 
