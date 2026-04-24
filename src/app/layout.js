@@ -14,11 +14,15 @@ const geistMono = Geist_Mono({
 export const metadata = {
   title: 'GymPWA',
   description: 'Entrar, anotar, salir.',
-  manifest: '/manifest.json', // Conecta con el manifiesto
+  manifest: '/manifest.json',
   appleWebApp: {
-    capable: true, // Esto quita la barra de Safari en iOS
+    capable: true,
     statusBarStyle: 'black-translucent',
     title: 'GymPWA',
+  },
+  icons: {
+    icon: [{ url: '/icon.svg', type: 'image/svg+xml', sizes: 'any' }],
+    apple: [{ url: '/apple-touch-icon.svg', type: 'image/svg+xml', sizes: '180x180' }],
   },
 };
 
@@ -26,8 +30,7 @@ export const viewport = {
   themeColor: '#000000',
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false, // CLAVE: Evita que el móvil haga zoom al tocar un botón
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({ children }) {
@@ -36,7 +39,7 @@ export default function RootLayout({ children }) {
       lang="es"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col font-sans">{children}</body>
     </html>
   );
 }
