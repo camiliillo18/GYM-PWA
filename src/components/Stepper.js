@@ -49,7 +49,7 @@ export default function Stepper({ label, value, onChange, step = 1, unit = "", m
         
         <button 
           onClick={handleIncrease} 
-          className="w-14 h-14 bg-blue-600 text-white rounded-full flex items-center justify-center text-3xl font-light active:bg-blue-500 active:scale-90 transition-all select-none touch-manipulation shadow-[0_0_10px_rgba(37,99,235,0.3)]"
+          className="w-14 h-14 bg-green-600 text-white rounded-full flex items-center justify-center text-3xl font-light active:bg-green-500 active:scale-90 transition-all select-none touch-manipulation shadow-[0_0_10px_rgba(22,163,74,0.3)]"
         >
           +
         </button>

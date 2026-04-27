@@ -756,17 +756,17 @@ export default function Home() {
     } catch {}
   };
 
-  if (loading) return <div className="flex h-[100dvh] items-center justify-center bg-black"><div className="w-8 h-8 border-4 border-gray-800 border-t-blue-500 rounded-full animate-spin"></div></div>;
+  if (loading) return <div className="flex h-[100dvh] items-center justify-center bg-black"><div className="w-8 h-8 border-4 border-gray-800 border-t-green-500 rounded-full animate-spin"></div></div>;
 
   if (!session) {
     return (
       <div className="flex flex-col min-h-[100dvh] bg-black px-6 justify-center pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
         <div className="w-full max-w-sm mx-auto pb-10">
-          <h1 className="text-5xl font-black text-white tracking-tighter mb-10">Gym<span className="text-blue-500">PWA</span></h1>
+          <h1 className="text-5xl font-black text-white tracking-tighter mb-10">Gym<span className="text-green-500">PWA</span></h1>
           <form className="space-y-4" onSubmit={handleLogin}>
             <input type="email" autoComplete="email" inputMode="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-gray-900 text-white px-5 py-4 rounded-2xl border border-gray-800 outline-none text-base" required />
             <input type="password" autoComplete="current-password" placeholder="Contraseña" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-gray-900 text-white px-5 py-4 rounded-2xl border border-gray-800 outline-none text-base" required />
-            <button type="submit" className="w-full bg-blue-600 text-white font-bold text-lg px-5 py-4 rounded-2xl mt-4 active:scale-95 transition-transform">Iniciar Sesión</button>
+            <button type="submit" className="w-full bg-green-600 text-white font-bold text-lg px-5 py-4 rounded-2xl mt-4 active:scale-95 transition-transform">Iniciar Sesión</button>
             <button type="button" onClick={handleSignUp} className="w-full bg-transparent text-gray-500 font-bold text-sm py-2 active:text-white transition-colors">¿No tienes cuenta? Crear cuenta</button>
           </form>
         </div>
@@ -781,7 +781,7 @@ export default function Home() {
         <header className="flex justify-between items-center mb-8 shrink-0">
           <button onClick={() => setView('dashboard')} className="text-gray-400 p-2 -ml-2 text-lg">← Volver</button>
           <span className="text-white font-bold">Historial</span>
-          <button onClick={handleCopyHistory} className={`px-3 py-1 rounded-lg text-sm font-bold transition-all ${copied ? 'bg-green-600 text-white' : 'bg-gray-800 text-blue-400'}`}>
+          <button onClick={handleCopyHistory} className={`px-3 py-1 rounded-lg text-sm font-bold transition-all ${copied ? 'bg-green-600 text-white' : 'bg-gray-800 text-green-400'}`}>
             {copied ? '✅ Copiado' : `📋 Copiar (${selectedCount})`}
           </button>
         </header>
@@ -792,9 +792,9 @@ export default function Home() {
                 <div className="flex justify-between items-center select-none">
                   <div className="flex items-center gap-4 flex-1">
                     <label className="p-3 -ml-3 cursor-pointer" aria-label="Seleccionar día">
-                      <input type="checkbox" checked={!!selectedDates[dayData.date]} onChange={(e) => setSelectedDates(prev => ({...prev, [dayData.date]: e.target.checked}))} className="w-6 h-6 accent-blue-500 block" />
+                      <input type="checkbox" checked={!!selectedDates[dayData.date]} onChange={(e) => setSelectedDates(prev => ({...prev, [dayData.date]: e.target.checked}))} className="w-6 h-6 accent-green-500 block" />
                     </label>
-                    <h3 className="text-xl font-black text-blue-500 cursor-pointer flex-1" onClick={() => setExpandedDates(prev => ({...prev, [dayData.date]: !prev[dayData.date]}))}>{dayData.date}</h3>
+                    <h3 className="text-xl font-black text-green-500 cursor-pointer flex-1" onClick={() => setExpandedDates(prev => ({...prev, [dayData.date]: !prev[dayData.date]}))}>{dayData.date}</h3>
                   </div>
                   <div className="text-gray-500 font-bold text-3xl cursor-pointer p-2" onClick={() => setExpandedDates(prev => ({...prev, [dayData.date]: !prev[dayData.date]}))}>{expandedDates[dayData.date] ? '−' : '+'}</div>
                 </div>
@@ -804,7 +804,7 @@ export default function Home() {
                       <div key={eIdx}><h4 className="text-white font-bold mb-2">{ex.name}</h4>
                         <div className="space-y-2">
                           {ex.logs.map(log => (
-                            <div key={log.id} className={`flex flex-col text-sm p-3 rounded-xl border ${editingHistLog?.id === log.id ? 'border-blue-500 bg-black' : 'border-gray-800 bg-black'}`}>
+                            <div key={log.id} className={`flex flex-col text-sm p-3 rounded-xl border ${editingHistLog?.id === log.id ? 'border-green-500 bg-black' : 'border-gray-800 bg-black'}`}>
                               {editingHistLog?.id === log.id ? (
                                 <div className="flex flex-col gap-3">
                                   <div className="flex justify-between items-center">
@@ -819,7 +819,7 @@ export default function Home() {
                                         inputMode="decimal"
                                         value={editingHistLog.weight}
                                         onChange={(e) => setEditingHistLog({ ...editingHistLog, weight: e.target.value })}
-                                        className="w-full min-w-0 bg-gray-900 text-white px-2 py-2 rounded-lg text-base text-center border border-gray-800 focus:border-blue-500 outline-none"
+                                        className="w-full min-w-0 bg-gray-900 text-white px-2 py-2 rounded-lg text-base text-center border border-gray-800 focus:border-green-500 outline-none"
                                       />
                                     </label>
                                     <label className="flex flex-col gap-1">
@@ -829,7 +829,7 @@ export default function Home() {
                                         inputMode="numeric"
                                         value={editingHistLog.reps}
                                         onChange={(e) => setEditingHistLog({ ...editingHistLog, reps: e.target.value })}
-                                        className="w-full min-w-0 bg-gray-900 text-white px-2 py-2 rounded-lg text-base text-center border border-gray-800 focus:border-blue-500 outline-none"
+                                        className="w-full min-w-0 bg-gray-900 text-white px-2 py-2 rounded-lg text-base text-center border border-gray-800 focus:border-green-500 outline-none"
                                       />
                                     </label>
                                     <label className="flex flex-col gap-1">
@@ -839,13 +839,13 @@ export default function Home() {
                                         inputMode="numeric"
                                         value={editingHistLog.rir}
                                         onChange={(e) => setEditingHistLog({ ...editingHistLog, rir: e.target.value })}
-                                        className="w-full min-w-0 bg-gray-900 text-white px-2 py-2 rounded-lg text-base text-center border border-gray-800 focus:border-blue-500 outline-none"
+                                        className="w-full min-w-0 bg-gray-900 text-white px-2 py-2 rounded-lg text-base text-center border border-gray-800 focus:border-green-500 outline-none"
                                       />
                                     </label>
                                   </div>
                                   <div className="flex gap-2">
                                     <button onClick={() => setEditingHistLog(null)} className="flex-1 bg-gray-800 text-white py-2 rounded-lg font-bold text-sm active:scale-95">Cancelar</button>
-                                    <button onClick={saveHistoryLog} className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-bold text-sm active:scale-95">Guardar</button>
+                                    <button onClick={saveHistoryLog} className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold text-sm active:scale-95">Guardar</button>
                                   </div>
                                 </div>
                               ) : (
@@ -875,7 +875,7 @@ export default function Home() {
           <div className="space-y-6">
             {routineDays.map((day, dIdx) => (
               <div key={dIdx} className="bg-gray-900/50 p-4 rounded-3xl border border-gray-800">
-                <input type="text" value={day.dayName} onChange={(e) => { const u = [...routineDays]; u[dIdx].dayName = e.target.value; setRoutineDays(u); }} className="bg-transparent text-blue-500 font-bold text-xl mb-4 w-full outline-none" placeholder="Día..."/>
+                <input type="text" value={day.dayName} onChange={(e) => { const u = [...routineDays]; u[dIdx].dayName = e.target.value; setRoutineDays(u); }} className="bg-transparent text-green-500 font-bold text-xl mb-4 w-full outline-none" placeholder="Día..."/>
                 <div className="space-y-4">
                   {day.exercises.map((ex, eIdx) => (
                     <div key={eIdx} className="bg-black p-3 rounded-2xl border border-gray-800 space-y-3">
@@ -911,7 +911,7 @@ export default function Home() {
                               inputMode="numeric"
                               value={ex[`target${f}`]}
                               onChange={(e) => { const u = [...routineDays]; u[dIdx].exercises[eIdx][`target${f}`] = e.target.value; setRoutineDays(u); }}
-                              className="w-full bg-gray-900 text-white px-2 py-2 rounded-xl outline-none text-base text-center border border-gray-800 focus:border-blue-500"
+                              className="w-full bg-gray-900 text-white px-2 py-2 rounded-xl outline-none text-base text-center border border-gray-800 focus:border-green-500"
                             />
                           </div>
                         ))}
@@ -925,7 +925,7 @@ export default function Home() {
           </div>
           <button onClick={() => setRoutineDays([...routineDays, { dayName: `Día ${routineDays.length + 1}`, exercises: [{ id: null, name: '', targetSets: '', targetReps: '', targetRir: '' }] }])} className="w-full py-4 rounded-2xl bg-gray-800 text-white font-bold">+ Nuevo Día</button>
         </div>
-        <button onClick={handleSaveRoutine} className="w-full bg-blue-600 text-white font-bold text-xl px-5 py-5 rounded-3xl mt-4 shrink-0">Guardar</button>
+        <button onClick={handleSaveRoutine} className="w-full bg-green-600 text-white font-bold text-xl px-5 py-5 rounded-3xl mt-4 shrink-0">Guardar</button>
       </div>
     );
   }
@@ -956,7 +956,7 @@ export default function Home() {
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <h3 className="text-white font-bold text-xl mb-3">Sin programación</h3>
               <p className="text-gray-500 text-sm mb-8 px-4">Planifica peso, sets, reps y RIR por semana dentro de un bloque.</p>
-              <button onClick={() => handleCreateWeeklyPlan(4)} className="bg-blue-600 text-white font-bold px-6 py-4 rounded-2xl active:scale-95 shadow-[0_0_20px_rgba(37,99,235,0.3)]">
+              <button onClick={() => handleCreateWeeklyPlan(4)} className="bg-green-600 text-white font-bold px-6 py-4 rounded-2xl active:scale-95 shadow-[0_0_20px_rgba(22,163,74,0.3)]">
                 + Crear programación (4 semanas)
               </button>
             </div>
@@ -968,7 +968,7 @@ export default function Home() {
                   <div className="flex items-center gap-3">
                     <button onClick={() => handleChangeTotalWeeks(-1)} className="w-10 h-10 bg-gray-800 text-white rounded-full text-xl active:scale-90">−</button>
                     <span className="text-white font-black text-2xl w-8 text-center">{programmingTotalWeeks}</span>
-                    <button onClick={() => handleChangeTotalWeeks(+1)} className="w-10 h-10 bg-blue-600 text-white rounded-full text-xl active:scale-90">+</button>
+                    <button onClick={() => handleChangeTotalWeeks(+1)} className="w-10 h-10 bg-green-600 text-white rounded-full text-xl active:scale-90">+</button>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -976,7 +976,7 @@ export default function Home() {
                     <button
                       key={w}
                       onClick={() => handleSelectProgrammingWeek(w)}
-                      className={`px-4 py-2 rounded-full font-bold text-sm border transition-colors ${programmingWeekActive === w ? 'bg-blue-600 border-blue-500 text-white' : 'bg-black border-gray-800 text-gray-400'}`}
+                      className={`px-4 py-2 rounded-full font-bold text-sm border transition-colors ${programmingWeekActive === w ? 'bg-green-600 border-green-500 text-white' : 'bg-black border-gray-800 text-gray-400'}`}
                     >
                       S{w}
                     </button>
@@ -994,7 +994,7 @@ export default function Home() {
 
               {Object.entries(daysMap).map(([dayName, exercises]) => (
                 <div key={dayName} className="bg-gray-900/50 p-4 rounded-3xl border border-gray-800">
-                  <h4 className="text-blue-500 font-bold text-xl mb-4">{dayName}</h4>
+                  <h4 className="text-green-500 font-bold text-xl mb-4">{dayName}</h4>
                   <div className="space-y-3">
                     {exercises.map(ex => {
                       const cell = weekTargets?.[ex.id]?.[programmingWeekActive] || { weight: '', sets: '', reps: '', rir: '' };
@@ -1016,7 +1016,7 @@ export default function Home() {
                                   value={cell[f.key]}
                                   onChange={(e) => handleWeekCellChange(ex.id, programmingWeekActive, f.key, e.target.value)}
                                   placeholder={f.placeholder}
-                                  className="w-full bg-gray-900 text-white px-2 py-2 rounded-xl outline-none text-base text-center border border-gray-800 focus:border-blue-500"
+                                  className="w-full bg-gray-900 text-white px-2 py-2 rounded-xl outline-none text-base text-center border border-gray-800 focus:border-green-500"
                                 />
                               </div>
                             ))}
@@ -1036,7 +1036,7 @@ export default function Home() {
         </div>
 
         {hasPlan && (
-          <button onClick={handleSaveProgramming} className="w-full bg-blue-600 text-white font-bold text-xl px-5 py-5 rounded-3xl mt-4 shrink-0 active:scale-95">
+          <button onClick={handleSaveProgramming} className="w-full bg-green-600 text-white font-bold text-xl px-5 py-5 rounded-3xl mt-4 shrink-0 active:scale-95">
             Guardar
           </button>
         )}
@@ -1065,12 +1065,12 @@ export default function Home() {
 
         <div className="flex-1 overflow-y-auto hide-scrollbar pb-10">
           <h2 className="text-4xl font-black text-white mb-1 tracking-tight break-words leading-tight">{activeEx.name}</h2>
-          <p className="text-blue-500 font-bold mb-1 uppercase tracking-wider">
+          <p className="text-green-500 font-bold mb-1 uppercase tracking-wider">
             {editingLogId ? `EDITANDO SERIE ${currentSet}` : `SERIE ${currentSet}`}
           </p>
           {activeRoutine?.has_weekly_plan ? (
             <p className="text-gray-500 text-sm mb-8">
-              <span className="text-blue-400 font-bold">Semana {activeRoutine.current_week}</span> · Obj: {activeWeekTargets[activeEx.id]?.target_sets || activeEx.target_sets}s • {activeWeekTargets[activeEx.id]?.target_reps || activeEx.target_reps}r • RIR {activeWeekTargets[activeEx.id]?.target_rir || activeEx.target_rir}
+              <span className="text-green-400 font-bold">Semana {activeRoutine.current_week}</span> · Obj: {activeWeekTargets[activeEx.id]?.target_sets || activeEx.target_sets}s • {activeWeekTargets[activeEx.id]?.target_reps || activeEx.target_reps}r • RIR {activeWeekTargets[activeEx.id]?.target_rir || activeEx.target_rir}
             </p>
           ) : (
             <p className="text-gray-500 text-sm mb-8">Objetivo: {activeEx.target_sets}s • {activeEx.target_reps}r • RIR {activeEx.target_rir}</p>
@@ -1089,7 +1089,7 @@ export default function Home() {
                 <div 
                   key={log.id} 
                   onClick={() => handleLoadLogForEdit(log)}
-                  className={`flex justify-between items-center p-4 rounded-2xl border transition-all ${editingLogId === log.id ? 'bg-blue-600/20 border-blue-500' : 'bg-gray-900 border-gray-800 active:scale-95'}`}
+                  className={`flex justify-between items-center p-4 rounded-2xl border transition-all ${editingLogId === log.id ? 'bg-green-600/20 border-green-500' : 'bg-gray-900 border-gray-800 active:scale-95'}`}
                 >
                   <span className="text-white font-bold text-lg">S{log.set_number}</span>
                   <div className="text-right">
@@ -1152,7 +1152,7 @@ export default function Home() {
           </div>
         )}
 
-        <div className="bg-blue-600/10 border border-blue-500/30 p-4 rounded-3xl flex gap-2 items-center">
+        <div className="bg-green-600/10 border border-green-500/30 p-4 rounded-3xl flex gap-2 items-center">
           <input
             type="text"
             placeholder="Código de rutina"
@@ -1165,7 +1165,7 @@ export default function Home() {
           />
           <button
             onClick={handleImportRoutine}
-            className="shrink-0 bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-sm active:scale-95"
+            className="shrink-0 bg-green-600 text-white px-4 py-2 rounded-xl font-bold text-sm active:scale-95"
           >
             Importar
           </button>
@@ -1194,7 +1194,7 @@ export default function Home() {
                     <h3 className="text-2xl font-black text-white break-words leading-tight">{routine.name}</h3>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleCopyShareCode(routine); }}
-                      className={`mt-1 inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-1 -ml-2 rounded-md active:scale-95 transition-colors max-w-full truncate ${copiedCodeId === routine.id ? 'text-green-400' : 'text-blue-500 active:text-blue-300'}`}
+                      className={`mt-1 inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-1 -ml-2 rounded-md active:scale-95 transition-colors max-w-full truncate ${copiedCodeId === routine.id ? 'text-green-400' : 'text-green-500 active:text-green-300'}`}
                       aria-label="Copiar código de rutina"
                     >
                       {copiedCodeId === routine.id ? '✓ Copiado' : <>🔗 {routine.share_code}</>}
@@ -1214,12 +1214,12 @@ export default function Home() {
                   const isDone = (routine.completed_weeks || []).includes(routine.current_week);
                   return (
                     <div className="mb-4 flex flex-wrap gap-2 items-center">
-                      <div className={`inline-flex items-center gap-1 pl-1 pr-1 rounded-full border ${isDone ? 'bg-green-600/10 border-green-500/30' : 'bg-blue-600/10 border-blue-500/30'}`}>
-                        <button aria-label="Semana anterior" onClick={(e) => { e.stopPropagation(); handleChangeCurrentWeek(routine, -1); }} className={`font-bold w-9 h-9 flex items-center justify-center text-base active:scale-90 ${isDone ? 'text-green-400' : 'text-blue-400'}`}>−</button>
-                        <span className={`font-bold text-[11px] px-1 whitespace-nowrap ${isDone ? 'text-green-300' : 'text-blue-300'}`}>
+                      <div className={`inline-flex items-center gap-1 pl-1 pr-1 rounded-full border ${isDone ? 'bg-green-600 border-green-500 shadow-[0_0_10px_rgba(22,163,74,0.4)]' : 'bg-green-600/10 border-green-500/30'}`}>
+                        <button aria-label="Semana anterior" onClick={(e) => { e.stopPropagation(); handleChangeCurrentWeek(routine, -1); }} className={`font-bold w-9 h-9 flex items-center justify-center text-base active:scale-90 ${isDone ? 'text-white' : 'text-green-400'}`}>−</button>
+                        <span className={`font-bold text-[11px] px-1 whitespace-nowrap ${isDone ? 'text-white' : 'text-green-300'}`}>
                           {isDone && '✓ '}Semana {routine.current_week}/{routine.total_weeks}
                         </span>
-                        <button aria-label="Semana siguiente" onClick={(e) => { e.stopPropagation(); handleChangeCurrentWeek(routine, +1); }} className={`font-bold w-9 h-9 flex items-center justify-center text-base active:scale-90 ${isDone ? 'text-green-400' : 'text-blue-400'}`}>+</button>
+                        <button aria-label="Semana siguiente" onClick={(e) => { e.stopPropagation(); handleChangeCurrentWeek(routine, +1); }} className={`font-bold w-9 h-9 flex items-center justify-center text-base active:scale-90 ${isDone ? 'text-white' : 'text-green-400'}`}>+</button>
                       </div>
                       {!isDone && (
                         <button onClick={(e) => { e.stopPropagation(); handleCompleteWeek(routine); }} className="bg-green-600 text-white text-[11px] font-bold px-3 py-1 rounded-full active:scale-95 shadow-[0_0_10px_rgba(22,163,74,0.25)] whitespace-nowrap">
@@ -1235,7 +1235,7 @@ export default function Home() {
                     {Object.entries(daysMap).map(([dayName, exercises]) => (
                       <div key={dayName} className="bg-black p-4 rounded-2xl border border-gray-800 flex flex-col">
                         <div className="flex justify-between items-center mb-3">
-                          <span className="text-blue-500 font-bold text-lg">{dayName}</span>
+                          <span className="text-green-500 font-bold text-lg">{dayName}</span>
                           <span className="text-gray-600 text-xs font-bold">{exercises.length} ejercicios</span>
                         </div>
                         <div className="space-y-2 mb-4">
@@ -1249,7 +1249,7 @@ export default function Home() {
                                 <span className="text-gray-300 font-medium truncate pr-2">{ex.name}</span>
                                 <span className="text-gray-500 text-xs whitespace-nowrap">
                                   {weight !== null && weight !== undefined && (
-                                    <><span className="text-blue-400 font-bold">{weight}kg</span> <span className="mx-1">·</span> </>
+                                    <><span className="text-green-400 font-bold">{weight}kg</span> <span className="mx-1">·</span> </>
                                   )}
                                   {sets}s <span className="mx-1">x</span> {reps}r
                                 </span>
@@ -1269,7 +1269,7 @@ export default function Home() {
           })
         )}
       </div>
-      <button onClick={handleOpenCreate} className="w-full bg-blue-600 text-white font-bold text-lg px-5 py-5 rounded-3xl mt-4 shrink-0">+ NUEVA RUTINA</button>
+      <button onClick={handleOpenCreate} className="w-full bg-green-600 text-white font-bold text-lg px-5 py-5 rounded-3xl mt-4 shrink-0">+ NUEVA RUTINA</button>
     </div>
   );
 }
