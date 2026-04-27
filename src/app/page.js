@@ -55,6 +55,15 @@ export default function Home() {
   const [dialog, setDialog] = useState(null);
   const [toast, setToast] = useState(null);
 
+  const [savingSet, setSavingSet] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [savingRoutine, setSavingRoutine] = useState(false);
+  const [routineDirty, setRoutineDirty] = useState(false);
+  const [historyMonthsLoaded, setHistoryMonthsLoaded] = useState(3);
+  const [historyHasMore, setHistoryHasMore] = useState(true);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
+
   const showDialog = (opts) => new Promise((resolve) => {
     setDialog({
       type: 'alert',
@@ -72,7 +81,6 @@ export default function Home() {
   };
 
   const fetchRoutines = async () => {
-    setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
 
     if (user) {
@@ -118,18 +126,36 @@ export default function Home() {
         }
       }
     }
-    setLoading(false);
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
-      if (session) fetchRoutines();
-      else setLoading(false);
+      if (session) await fetchRoutines();
+      setLoading(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);
-      if (session) fetchRoutines();
+      if (session) {
+        if (event === 'SIGNED_IN') {
+          setLoading(true);
+          await fetchRoutines();
+          setLoading(false);
+        } else {
+          fetchRoutines();
+        }
+      } else if (event === 'SIGNED_OUT') {
+        setView('dashboard');
+        setRoutines([]);
+        setActiveExercises([]);
+        setSessionLogs([]);
+        setActiveRoutine(null);
+        setActiveWeekTargets({});
+        setEditingRoutineId(null);
+        setRoutineDirty(false);
+        setEditingHistLog(null);
+        setHistoryData([]);
+      }
     });
 
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
@@ -153,89 +179,146 @@ export default function Home() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    setLoading(true);
+    if (authBusy) return;
+    setAuthBusy(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    setAuthBusy(false);
     if (error) showAlert(error.message, { title: 'Error de inicio de sesión', variant: 'danger' });
-    setLoading(false);
   };
 
   const handleSignUp = async (e) => {
     e.preventDefault();
+    if (authBusy) return;
     if (!await showConfirm('¿Crear una cuenta nueva con este email?', { title: 'Nueva cuenta' })) return;
-    setLoading(true);
+    setAuthBusy(true);
     const { error } = await supabase.auth.signUp({ email, password });
+    setAuthBusy(false);
     if (error) showAlert(error.message, { title: 'Error al crear cuenta', variant: 'danger' });
     else showToast('¡Cuenta creada! Ya puedes entrar.');
-    setLoading(false);
   };
 
   const handleLogout = async () => { await supabase.auth.signOut(); };
 
   const handleImportRoutine = async () => {
+    if (importing) return;
     if (!importCode.trim()) return;
-    setLoading(true);
-    const { data: originalRoutine, error: rError } = await supabase.from('routines').select('*, routine_exercises(*)').eq('share_code', importCode.trim()).single();
-    if (rError || !originalRoutine) { showAlert('No se encontró ninguna rutina con ese código.', { variant: 'danger' }); setLoading(false); return; }
-    const { data: newRoutine, error: nError } = await supabase.from('routines').insert([{
-      name: originalRoutine.name + " (Copia)",
-      has_weekly_plan: !!originalRoutine.has_weekly_plan,
-      total_weeks: originalRoutine.total_weeks || 0,
-      current_week: 1,
-    }]).select().single();
-    if (nError) { showAlert(nError.message, { title: 'Error al clonar la rutina', variant: 'danger' }); setLoading(false); return; }
-
-    const oldExIds = originalRoutine.routine_exercises.map(e => e.id);
-    const newExercises = originalRoutine.routine_exercises.map(ex => ({
-      routine_id: newRoutine.id, name: ex.name, day_name: ex.day_name, sort_order: ex.sort_order, target_sets: ex.target_sets, target_reps: ex.target_reps, target_rir: ex.target_rir
-    }));
-    const { data: insertedEx } = await supabase.from('routine_exercises').insert(newExercises).select();
-
-    if (originalRoutine.has_weekly_plan && insertedEx && insertedEx.length > 0 && oldExIds.length > 0) {
-      const { data: origTargets } = await supabase.from('exercise_week_targets')
-        .select('routine_exercise_id, week_number, target_weight, target_sets, target_reps, target_rir')
-        .in('routine_exercise_id', oldExIds);
-      if (origTargets && origTargets.length > 0) {
-        const oldById = Object.fromEntries(originalRoutine.routine_exercises.map(e => [e.id, e]));
-        const newByKey = {};
-        insertedEx.forEach(ne => { newByKey[`${ne.day_name}|${ne.sort_order}|${ne.name}`] = ne.id; });
-        const rows = origTargets.map(t => {
-          const oldEx = oldById[t.routine_exercise_id];
-          const newId = oldEx ? newByKey[`${oldEx.day_name}|${oldEx.sort_order}|${oldEx.name}`] : null;
-          if (!newId) return null;
-          return {
-            routine_exercise_id: newId,
-            week_number: t.week_number,
-            target_weight: t.target_weight,
-            target_sets: t.target_sets,
-            target_reps: t.target_reps,
-            target_rir: t.target_rir,
-          };
-        }).filter(Boolean);
-        if (rows.length > 0) await supabase.from('exercise_week_targets').insert(rows);
+    setImporting(true);
+    try {
+      const { data: originalRoutine, error: rError } = await supabase.from('routines').select('*, routine_exercises(*)').eq('share_code', importCode.trim()).single();
+      if (rError || !originalRoutine) {
+        showAlert('No se encontró ninguna rutina con ese código.', { variant: 'danger' });
+        return;
       }
-    }
+      const { data: newRoutine, error: nError } = await supabase.from('routines').insert([{
+        name: originalRoutine.name + " (Copia)",
+        has_weekly_plan: !!originalRoutine.has_weekly_plan,
+        total_weeks: originalRoutine.total_weeks || 0,
+        current_week: 1,
+      }]).select().single();
+      if (nError) {
+        showAlert(nError.message, { title: 'Error al clonar la rutina', variant: 'danger' });
+        return;
+      }
 
-    showToast('¡Rutina importada con éxito!'); setImportCode(''); fetchRoutines(); setLoading(false);
+      const oldExIds = originalRoutine.routine_exercises.map(e => e.id);
+      const newExercises = originalRoutine.routine_exercises.map(ex => ({
+        routine_id: newRoutine.id, name: ex.name, day_name: ex.day_name, sort_order: ex.sort_order, target_sets: ex.target_sets, target_reps: ex.target_reps, target_rir: ex.target_rir
+      }));
+      const { data: insertedEx, error: exErr } = await supabase.from('routine_exercises').insert(newExercises).select();
+      if (exErr) {
+        showAlert('La rutina se creó pero falló al copiar los ejercicios.', { title: 'Error al clonar', variant: 'danger' });
+        return;
+      }
+
+      if (originalRoutine.has_weekly_plan && insertedEx && insertedEx.length > 0 && oldExIds.length > 0) {
+        const { data: origTargets } = await supabase.from('exercise_week_targets')
+          .select('routine_exercise_id, week_number, target_weight, target_sets, target_reps, target_rir')
+          .in('routine_exercise_id', oldExIds);
+        if (origTargets && origTargets.length > 0) {
+          const oldById = Object.fromEntries(originalRoutine.routine_exercises.map(e => [e.id, e]));
+          const newByKey = {};
+          insertedEx.forEach(ne => { newByKey[`${ne.day_name}|${ne.sort_order}|${ne.name}`] = ne.id; });
+          const rows = origTargets.map(t => {
+            const oldEx = oldById[t.routine_exercise_id];
+            const newId = oldEx ? newByKey[`${oldEx.day_name}|${oldEx.sort_order}|${oldEx.name}`] : null;
+            if (!newId) return null;
+            return {
+              routine_exercise_id: newId,
+              week_number: t.week_number,
+              target_weight: t.target_weight,
+              target_sets: t.target_sets,
+              target_reps: t.target_reps,
+              target_rir: t.target_rir,
+            };
+          }).filter(Boolean);
+          if (rows.length > 0) await supabase.from('exercise_week_targets').insert(rows);
+        }
+      }
+
+      showToast('¡Rutina importada con éxito!');
+      setImportCode('');
+      await fetchRoutines();
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const fetchHistory = async (months) => {
+    const minDate = new Date();
+    minDate.setMonth(minDate.getMonth() - months);
+    minDate.setHours(0, 0, 0, 0);
+    const { data, error } = await supabase
+      .from('workout_logs')
+      .select(`id, weight, reps, rir, set_number, created_at, routine_exercises (name)`)
+      .gte('created_at', minDate.toISOString())
+      .order('created_at', { ascending: false });
+    if (error) return null;
+    const grouped = (data || []).reduce((acc, log) => {
+      const dateStr = new Date(log.created_at).toLocaleDateString();
+      if (!acc[dateStr]) acc[dateStr] = {};
+      const exName = log.routine_exercises?.name || 'Ejercicio borrado';
+      if (!acc[dateStr][exName]) acc[dateStr][exName] = [];
+      acc[dateStr][exName].push(log);
+      return acc;
+    }, {});
+    return Object.keys(grouped).map(date => ({
+      date,
+      exercises: Object.keys(grouped[date]).map(name => ({
+        name,
+        logs: grouped[date][name].sort((a, b) => a.set_number - b.set_number),
+      })),
+    }));
   };
 
   const handleOpenHistory = async () => {
-    setLoading(true); setEditingHistLog(null);
-    const { data, error } = await supabase.from('workout_logs').select(`id, weight, reps, rir, set_number, created_at, routine_exercises (name)`).order('created_at', { ascending: false }).limit(300);
-    if (!error && data) {
-      const grouped = data.reduce((acc, log) => {
-        const dateStr = new Date(log.created_at).toLocaleDateString();
-        if (!acc[dateStr]) acc[dateStr] = {};
-        const exName = log.routine_exercises?.name || 'Ejercicio borrado';
-        if (!acc[dateStr][exName]) acc[dateStr][exName] = [];
-        acc[dateStr][exName].push(log); return acc;
-      }, {});
-      const historyArray = Object.keys(grouped).map(date => ({ date, exercises: Object.keys(grouped[date]).map(name => ({ name, logs: grouped[date][name].sort((a, b) => a.set_number - b.set_number) })) }));
+    setEditingHistLog(null);
+    setLoadingHistory(true);
+    const months = 3;
+    setHistoryMonthsLoaded(months);
+    const historyArray = await fetchHistory(months);
+    if (historyArray) {
       setHistoryData(historyArray);
       const initialExpanded = {}; const initialSelected = {};
       historyArray.forEach((d, idx) => { initialExpanded[d.date] = idx === 0; initialSelected[d.date] = false; });
       setExpandedDates(initialExpanded); setSelectedDates(initialSelected);
+      setHistoryHasMore(true);
     }
-    setView('history'); setLoading(false);
+    setView('history');
+    setLoadingHistory(false);
+  };
+
+  const handleLoadMoreHistory = async () => {
+    if (loadingHistory || !historyHasMore) return;
+    setLoadingHistory(true);
+    const nextMonths = historyMonthsLoaded + 1;
+    const prevCount = historyData.length;
+    const historyArray = await fetchHistory(nextMonths);
+    if (historyArray) {
+      setHistoryData(historyArray);
+      setHistoryMonthsLoaded(nextMonths);
+      if (historyArray.length === prevCount) setHistoryHasMore(false);
+    }
+    setLoadingHistory(false);
   };
 
   const handleCopyHistory = async () => {
@@ -256,14 +339,28 @@ export default function Home() {
   };
 
   const saveHistoryLog = async () => {
-    setLoading(true); await supabase.from('workout_logs').update({ weight: editingHistLog.weight, reps: editingHistLog.reps, rir: editingHistLog.rir }).eq('id', editingHistLog.id);
-    setEditingHistLog(null); await handleOpenHistory();
+    const { error } = await supabase.from('workout_logs').update({ weight: editingHistLog.weight, reps: editingHistLog.reps, rir: editingHistLog.rir }).eq('id', editingHistLog.id);
+    if (error) { showAlert('No se pudo guardar el cambio.', { variant: 'danger' }); return; }
+    setEditingHistLog(null);
+    await handleOpenHistory();
   };
 
   const deleteHistoryLog = async (id) => {
     if (!await showConfirm('¿Borrar esta serie? No se puede deshacer.', { title: 'Borrar serie', variant: 'danger', confirmText: 'Borrar' })) return;
-    setLoading(true); await supabase.from('workout_logs').delete().eq('id', id);
-    setEditingHistLog(null); await handleOpenHistory(); 
+    const { error } = await supabase.from('workout_logs').delete().eq('id', id);
+    if (error) { showAlert('No se pudo borrar la serie.', { variant: 'danger' }); return; }
+    setEditingHistLog(null);
+    await handleOpenHistory();
+  };
+
+  const updateRoutineDays = (next) => {
+    setRoutineDays(next);
+    setRoutineDirty(true);
+  };
+
+  const updateRoutineName = (name) => {
+    setNewRoutineName(name);
+    setRoutineDirty(true);
   };
 
   const moveExercise = (dIdx, eIdx, direction) => {
@@ -278,11 +375,24 @@ export default function Home() {
       u[dIdx] = day;
       return u;
     });
+    setRoutineDirty(true);
+  };
+
+  const handleExitEditor = async () => {
+    if (routineDirty) {
+      const ok = await showConfirm('Hay cambios sin guardar. ¿Seguro que quieres salir?', {
+        title: 'Cambios sin guardar', variant: 'danger', confirmText: 'Salir sin guardar', cancelText: 'Cancelar',
+      });
+      if (!ok) return;
+    }
+    setRoutineDirty(false);
+    setView('dashboard');
   };
 
   const handleOpenCreate = () => {
     setEditingRoutineId(null); setNewRoutineName('');
     setRoutineDays([{ dayName: 'Día 1', exercises: [{ id: null, name: '', targetSets: '', targetReps: '', targetRir: '' }] }]);
+    setRoutineDirty(false);
     setView('creating');
   };
 
@@ -297,17 +407,18 @@ export default function Home() {
     });
     const formattedDays = Object.keys(daysMap).map(dayName => ({ dayName, exercises: daysMap[dayName] }));
     setRoutineDays(formattedDays.length > 0 ? formattedDays : [{ dayName: 'Día 1', exercises: [{ id: null, name: '', targetSets: '', targetReps: '', targetRir: '' }] }]);
+    setRoutineDirty(false);
     setView('creating');
   };
 
   const handleDeleteRoutine = async (id) => {
     if (!await showConfirm('¿Borrar la rutina entera? Se perderán los ejercicios y la programación. El historial se mantiene.', { title: 'Borrar rutina', variant: 'danger', confirmText: 'Borrar' })) return;
-    setLoading(true); await supabase.from('routines').delete().eq('id', id);
-    fetchRoutines(); setLoading(false);
+    const { error } = await supabase.from('routines').delete().eq('id', id);
+    if (error) { showAlert('No se pudo borrar la rutina.', { variant: 'danger' }); return; }
+    await fetchRoutines();
   };
 
   const handleOpenProgramming = async (routine) => {
-    setLoading(true);
     setProgrammingRoutine(routine);
     setProgrammingTotalWeeks(routine.has_weekly_plan ? (routine.total_weeks || 0) : 0);
     setProgrammingWeekActive(routine.current_week || 1);
@@ -332,7 +443,6 @@ export default function Home() {
       setWeekTargets({});
     }
     setView('programming');
-    setLoading(false);
   };
 
   const handleCreateWeeklyPlan = (defaultWeeks = 4) => {
@@ -417,7 +527,6 @@ export default function Home() {
 
   const handleSaveProgramming = async () => {
     if (!programmingRoutine) return;
-    setLoading(true);
     const routineId = programmingRoutine.id;
     const exIds = (programmingRoutine.routine_exercises || []).map(e => e.id);
 
@@ -460,13 +569,11 @@ export default function Home() {
 
     await fetchRoutines();
     setView('dashboard');
-    setLoading(false);
   };
 
   const handleTogglePlanOff = async () => {
     if (!programmingRoutine) return;
     if (!await showConfirm('Se borrarán los datos por semana. Las rutinas y el historial se conservan.', { title: 'Apagar programación', variant: 'danger', confirmText: 'Apagar' })) return;
-    setLoading(true);
     const routineId = programmingRoutine.id;
     const exIds = (programmingRoutine.routine_exercises || []).map(e => e.id);
     if (exIds.length > 0) {
@@ -475,7 +582,6 @@ export default function Home() {
     await supabase.from('routines').update({ has_weekly_plan: false, total_weeks: 0, completed_weeks: [] }).eq('id', routineId);
     await fetchRoutines();
     setView('dashboard');
-    setLoading(false);
   };
 
   const handleCompleteWeek = async (routine) => {
@@ -532,6 +638,7 @@ export default function Home() {
   };
 
   const handleSaveRoutine = async () => {
+    if (savingRoutine) return;
     if (!newRoutineName.trim()) { showAlert('Ponle un nombre a la rutina antes de guardar.'); return; }
     let validationFailed = false; let hasValidExercises = false;
     for (const day of routineDays) {
@@ -543,28 +650,43 @@ export default function Home() {
       if (validationFailed) break;
     }
     if (!hasValidExercises || validationFailed) return;
-    setLoading(true);
-    let currentId = editingRoutineId;
-    if (currentId) await supabase.from('routines').update({ name: newRoutineName }).eq('id', currentId);
-    else {
-      const { data } = await supabase.from('routines').insert([{ name: newRoutineName }]).select().single();
-      currentId = data.id;
-    }
-    const toInsert = []; const toUpdate = [];
-    routineDays.forEach((day) => {
-      day.exercises.filter(ex => ex.name.trim() !== '').forEach((ex, index) => {
-        const d = { routine_id: currentId, name: ex.name.trim(), day_name: day.dayName.trim(), sort_order: index, target_sets: ex.targetSets, target_reps: ex.targetReps, target_rir: ex.targetRir };
-        if (ex.id) { d.id = ex.id; toUpdate.push(d); } else toInsert.push(d);
+    setSavingRoutine(true);
+    try {
+      let currentId = editingRoutineId;
+      if (currentId) {
+        const { error } = await supabase.from('routines').update({ name: newRoutineName }).eq('id', currentId);
+        if (error) { showAlert('No se pudo guardar la rutina.', { variant: 'danger' }); return; }
+      } else {
+        const { data, error } = await supabase.from('routines').insert([{ name: newRoutineName }]).select().single();
+        if (error || !data) { showAlert('No se pudo crear la rutina.', { variant: 'danger' }); return; }
+        currentId = data.id;
+      }
+      const toInsert = []; const toUpdate = [];
+      routineDays.forEach((day) => {
+        day.exercises.filter(ex => ex.name.trim() !== '').forEach((ex, index) => {
+          const d = { routine_id: currentId, name: ex.name.trim(), day_name: day.dayName.trim(), sort_order: index, target_sets: ex.targetSets, target_reps: ex.targetReps, target_rir: ex.targetRir };
+          if (ex.id) { d.id = ex.id; toUpdate.push(d); } else toInsert.push(d);
+        });
       });
-    });
-    if (toInsert.length > 0) await supabase.from('routine_exercises').insert(toInsert);
-    if (toUpdate.length > 0) await supabase.from('routine_exercises').upsert(toUpdate);
-    if (editingRoutineId) {
-      const kept = toUpdate.map(e => e.id);
-      if (kept.length > 0) await supabase.from('routine_exercises').delete().eq('routine_id', currentId).not('id', 'in', `(${kept.join(',')})`);
-      else await supabase.from('routine_exercises').delete().eq('routine_id', currentId);
+      if (toInsert.length > 0) {
+        const { error } = await supabase.from('routine_exercises').insert(toInsert);
+        if (error) { showAlert('Algunos ejercicios no se pudieron guardar.', { variant: 'danger' }); return; }
+      }
+      if (toUpdate.length > 0) {
+        const { error } = await supabase.from('routine_exercises').upsert(toUpdate);
+        if (error) { showAlert('Algunos ejercicios no se pudieron actualizar.', { variant: 'danger' }); return; }
+      }
+      if (editingRoutineId) {
+        const kept = toUpdate.map(e => e.id);
+        if (kept.length > 0) await supabase.from('routine_exercises').delete().eq('routine_id', currentId).not('id', 'in', `(${kept.join(',')})`);
+        else await supabase.from('routine_exercises').delete().eq('routine_id', currentId);
+      }
+      setRoutineDirty(false);
+      setView('dashboard');
+      await fetchRoutines();
+    } finally {
+      setSavingRoutine(false);
     }
-    setView('dashboard'); fetchRoutines(); setLoading(false);
   };
 
   const getEffectiveTargetSets = (ex) => {
@@ -618,7 +740,6 @@ export default function Home() {
   };
 
   const handleStartTraining = async (routine, exercises) => {
-    setLoading(true);
     const sorted = [...exercises].sort((a, b) => a.sort_order - b.sort_order);
     const routineInfo = {
       id: routine.id,
@@ -654,8 +775,6 @@ export default function Home() {
         .order('created_at', { ascending: true });
       todaysLogs = data || [];
     }
-
-    setLoading(false);
 
     let initialSessionLogs = [];
     let initialExIndex = 0;
@@ -694,7 +813,6 @@ export default function Home() {
       }
     }
 
-    setLoading(true);
     setActiveExercises(sorted);
     setCurrentExIndex(initialExIndex);
     setCurrentSet(initialSet);
@@ -702,54 +820,60 @@ export default function Home() {
     setEditingLogId(null);
     await loadDefaultsForExercise(sorted[initialExIndex], initialSessionLogs, routineInfo, weekMap);
     setView('training');
-    setLoading(false);
   };
 
   const handleSaveSet = async () => {
-    const activeEx = activeExercises[currentExIndex]; setLoading(true);
+    if (savingSet) return;
+    const activeEx = activeExercises[currentExIndex];
+    setSavingSet(true);
     haptic(12);
-    if (editingLogId) {
-      const { error } = await supabase.from('workout_logs').update({ weight, reps, rir }).eq('id', editingLogId);
-      if (!error) {
+    try {
+      if (editingLogId) {
+        const { error } = await supabase.from('workout_logs').update({ weight, reps, rir }).eq('id', editingLogId);
+        if (error) {
+          showAlert('No se pudo guardar la serie. Revisa la conexión y vuelve a intentarlo.', { title: 'Error al guardar', variant: 'danger' });
+          return;
+        }
         const updatedLogs = sessionLogs.map(log => log.id === editingLogId ? { ...log, weight, reps, rir } : log);
         setSessionLogs(updatedLogs);
         const currentExLogs = updatedLogs.filter(l => l.routine_exercise_id === activeEx.id);
         const maxTargetSets = parseInt(getEffectiveTargetSets(activeEx).split('-').pop());
         if (currentExLogs.length >= maxTargetSets) { handleLoadLogForEdit(currentExLogs[currentExLogs.length - 1]); }
         else { setEditingLogId(null); setCurrentSet(currentExLogs.length + 1); }
-      }
-    } else {
-      const { data, error } = await supabase.from('workout_logs').insert([{ routine_exercise_id: activeEx.id, set_number: currentSet, weight, reps, rir }]).select().single();
-      if (!error) {
+      } else {
+        const { data, error } = await supabase.from('workout_logs').insert([{ routine_exercise_id: activeEx.id, set_number: currentSet, weight, reps, rir }]).select().single();
+        if (error) {
+          showAlert('No se pudo guardar la serie. Revisa la conexión y vuelve a intentarlo.', { title: 'Error al guardar', variant: 'danger' });
+          return;
+        }
         const updatedLogs = [...sessionLogs, data]; setSessionLogs(updatedLogs);
         const maxTargetSets = parseInt(getEffectiveTargetSets(activeEx).split('-').pop());
         if (currentSet >= maxTargetSets) { handleNextExercise(updatedLogs); } else { setCurrentSet(prev => prev + 1); }
       }
+    } finally {
+      setSavingSet(false);
     }
-    setLoading(false);
   };
 
   const handleLoadLogForEdit = (log) => { setEditingLogId(log.id); setWeight(log.weight); setReps(log.reps); setRir(log.rir); setCurrentSet(log.set_number); };
 
   const handleNextExercise = async (currentLogs = sessionLogs) => {
     if (currentExIndex < activeExercises.length - 1) {
-      setLoading(true); const nextIndex = currentExIndex + 1; const nextEx = activeExercises[nextIndex];
+      const nextIndex = currentExIndex + 1; const nextEx = activeExercises[nextIndex];
       setCurrentExIndex(nextIndex); const logsForNextEx = currentLogs.filter(l => l.routine_exercise_id === nextEx.id);
       const maxTargetSets = parseInt(getEffectiveTargetSets(nextEx).split('-').pop());
-      if (logsForNextEx.length >= maxTargetSets && logsForNextEx.length > 0) { handleLoadLogForEdit(logsForNextEx[logsForNextEx.length - 1]); } 
+      if (logsForNextEx.length >= maxTargetSets && logsForNextEx.length > 0) { handleLoadLogForEdit(logsForNextEx[logsForNextEx.length - 1]); }
       else { setCurrentSet(logsForNextEx.length + 1); setEditingLogId(null); await loadDefaultsForExercise(nextEx, currentLogs); }
-      setLoading(false);
     } else { showAlert('Buen trabajo. Las series quedan guardadas en el historial.', { title: '¡Entrenamiento finalizado! 🏆' }); setView('dashboard'); }
   };
 
   const handlePrevExercise = async () => {
     if (currentExIndex > 0) {
-      setLoading(true); const prevIndex = currentExIndex - 1; const prevEx = activeExercises[prevIndex];
+      const prevIndex = currentExIndex - 1; const prevEx = activeExercises[prevIndex];
       setCurrentExIndex(prevIndex); const logsForPrevEx = sessionLogs.filter(l => l.routine_exercise_id === prevEx.id);
       const maxTargetSets = parseInt(getEffectiveTargetSets(prevEx).split('-').pop());
-      if (logsForPrevEx.length >= maxTargetSets && logsForPrevEx.length > 0) { handleLoadLogForEdit(logsForPrevEx[logsForPrevEx.length - 1]); } 
+      if (logsForPrevEx.length >= maxTargetSets && logsForPrevEx.length > 0) { handleLoadLogForEdit(logsForPrevEx[logsForPrevEx.length - 1]); }
       else { setCurrentSet(logsForPrevEx.length + 1); setEditingLogId(null); await loadDefaultsForExercise(prevEx, sessionLogs); }
-      setLoading(false);
     }
   };
 
@@ -864,8 +988,21 @@ export default function Home() {
           <form className="space-y-4" onSubmit={handleLogin}>
             <input type="email" autoComplete="email" inputMode="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-gray-900 text-white px-5 py-4 rounded-2xl border border-gray-800 outline-none text-base" required />
             <input type="password" autoComplete="current-password" placeholder="Contraseña" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-gray-900 text-white px-5 py-4 rounded-2xl border border-gray-800 outline-none text-base" required />
-            <button type="submit" className="w-full bg-green-600 text-white font-bold text-lg px-5 py-4 rounded-2xl mt-4 active:scale-95 transition-transform">Iniciar Sesión</button>
-            <button type="button" onClick={handleSignUp} className="w-full bg-transparent text-gray-500 font-bold text-sm py-2 active:text-white transition-colors">¿No tienes cuenta? Crear cuenta</button>
+            <button
+              type="submit"
+              disabled={authBusy}
+              className="w-full bg-green-600 text-white font-bold text-lg px-5 py-4 rounded-2xl mt-4 active:scale-95 transition-transform disabled:opacity-60 disabled:active:scale-100"
+            >
+              {authBusy ? 'Entrando...' : 'Iniciar Sesión'}
+            </button>
+            <button
+              type="button"
+              onClick={handleSignUp}
+              disabled={authBusy}
+              className="w-full bg-transparent text-gray-500 font-bold text-sm py-2 active:text-white transition-colors disabled:opacity-60"
+            >
+              ¿No tienes cuenta? Crear cuenta
+            </button>
           </form>
         </div>
         {overlay}
@@ -885,7 +1022,11 @@ export default function Home() {
           </button>
         </header>
         <div className="flex-1 overflow-y-auto space-y-4 hide-scrollbar pb-10">
-          {historyData.length === 0 ? <div className="text-center text-gray-500 mt-20">Sin entrenamientos.</div> :
+          {loadingHistory && historyData.length === 0 ? (
+            <div className="flex justify-center mt-20">
+              <div className="w-6 h-6 border-4 border-gray-800 border-t-green-500 rounded-full animate-spin"></div>
+            </div>
+          ) : historyData.length === 0 ? <div className="text-center text-gray-500 mt-20">Sin entrenamientos.</div> :
             historyData.map((dayData, idx) => (
               <div key={idx} className="bg-gray-900 p-5 rounded-3xl border border-gray-800">
                 <div className="flex justify-between items-center select-none">
@@ -960,6 +1101,19 @@ export default function Home() {
               </div>
             ))
           }
+          {historyData.length > 0 && (
+            historyHasMore ? (
+              <button
+                onClick={handleLoadMoreHistory}
+                disabled={loadingHistory}
+                className="w-full py-3 rounded-2xl border border-gray-800 text-gray-400 font-bold text-sm active:scale-95 disabled:opacity-60"
+              >
+                {loadingHistory ? 'Cargando...' : '↓ Cargar mes anterior'}
+              </button>
+            ) : (
+              <p className="text-center text-gray-600 text-xs py-3">No hay más historial</p>
+            )
+          )}
         </div>
         {overlay}
       </div>
@@ -969,13 +1123,13 @@ export default function Home() {
   if (view === 'creating') {
     return (
       <div className="flex flex-col h-[100dvh] bg-black px-6 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] animate-in fade-in">
-        <header className="flex justify-between items-center mb-8 shrink-0"><button onClick={() => setView('dashboard')} className="text-gray-400 p-2 -ml-2 text-lg">← Volver</button><span className="text-white font-bold">{editingRoutineId ? 'Editar' : 'Nueva'}</span><div className="w-10"></div></header>
+        <header className="flex justify-between items-center mb-8 shrink-0"><button onClick={handleExitEditor} className="text-gray-400 p-2 -ml-2 text-lg">← Volver</button><span className="text-white font-bold">{editingRoutineId ? 'Editar' : 'Nueva'}</span><div className="w-10"></div></header>
         <div className="flex-1 overflow-y-auto space-y-8 hide-scrollbar pb-6">
-          <input type="text" placeholder="Nombre de la rutina" value={newRoutineName} onChange={(e) => setNewRoutineName(e.target.value)} className="w-full bg-gray-900 text-white px-5 py-4 rounded-2xl border border-gray-800 outline-none text-xl font-bold"/>
+          <input type="text" placeholder="Nombre de la rutina" value={newRoutineName} onChange={(e) => updateRoutineName(e.target.value)} className="w-full bg-gray-900 text-white px-5 py-4 rounded-2xl border border-gray-800 outline-none text-xl font-bold"/>
           <div className="space-y-6">
             {routineDays.map((day, dIdx) => (
               <div key={dIdx} className="bg-gray-900/50 p-4 rounded-3xl border border-gray-800">
-                <input type="text" value={day.dayName} onChange={(e) => { const u = [...routineDays]; u[dIdx].dayName = e.target.value; setRoutineDays(u); }} className="bg-transparent text-green-500 font-bold text-xl mb-4 w-full outline-none" placeholder="Día..."/>
+                <input type="text" value={day.dayName} onChange={(e) => { const u = [...routineDays]; u[dIdx].dayName = e.target.value; updateRoutineDays(u); }} className="bg-transparent text-green-500 font-bold text-xl mb-4 w-full outline-none" placeholder="Día..."/>
                 <div className="space-y-4">
                   {day.exercises.map((ex, eIdx) => (
                     <div key={eIdx} className="bg-black p-3 rounded-2xl border border-gray-800 space-y-3">
@@ -997,11 +1151,11 @@ export default function Home() {
                         <button
                           type="button"
                           aria-label="Quitar ejercicio"
-                          onClick={() => { const u = [...routineDays]; u[dIdx].exercises.splice(eIdx, 1); setRoutineDays(u); }}
+                          onClick={() => { const u = [...routineDays]; u[dIdx].exercises.splice(eIdx, 1); updateRoutineDays(u); }}
                           className="w-8 h-8 flex items-center justify-center text-gray-500 active:text-red-500 active:scale-90"
                         >✕</button>
                       </div>
-                      <input type="text" placeholder="Ejercicio" value={ex.name} onChange={(e) => { const u = [...routineDays]; u[dIdx].exercises[eIdx].name = e.target.value; setRoutineDays(u); }} className="w-full bg-transparent text-white px-2 py-1 outline-none text-lg font-bold border-b border-gray-800"/>
+                      <input type="text" placeholder="Ejercicio" value={ex.name} onChange={(e) => { const u = [...routineDays]; u[dIdx].exercises[eIdx].name = e.target.value; updateRoutineDays(u); }} className="w-full bg-transparent text-white px-2 py-1 outline-none text-lg font-bold border-b border-gray-800"/>
                       <div className="flex gap-2">
                         {['Sets', 'Reps', 'Rir'].map(f => (
                           <div key={f} className="flex-1">
@@ -1010,7 +1164,7 @@ export default function Home() {
                               type="text"
                               inputMode="numeric"
                               value={ex[`target${f}`]}
-                              onChange={(e) => { const u = [...routineDays]; u[dIdx].exercises[eIdx][`target${f}`] = e.target.value; setRoutineDays(u); }}
+                              onChange={(e) => { const u = [...routineDays]; u[dIdx].exercises[eIdx][`target${f}`] = e.target.value; updateRoutineDays(u); }}
                               className="w-full bg-gray-900 text-white px-2 py-2 rounded-xl outline-none text-base text-center border border-gray-800 focus:border-green-500"
                             />
                           </div>
@@ -1019,13 +1173,19 @@ export default function Home() {
                     </div>
                   ))}
                 </div>
-                <button onClick={() => { const u = [...routineDays]; u[dIdx].exercises.push({ id: null, name: '', targetSets: '', targetReps: '', targetRir: '' }); setRoutineDays(u); }} className="w-full mt-4 py-3 rounded-2xl border-2 border-dashed border-gray-700 text-gray-400 font-bold text-sm">+ Ejercicio</button>
+                <button onClick={() => { const u = [...routineDays]; u[dIdx].exercises.push({ id: null, name: '', targetSets: '', targetReps: '', targetRir: '' }); updateRoutineDays(u); }} className="w-full mt-4 py-3 rounded-2xl border-2 border-dashed border-gray-700 text-gray-400 font-bold text-sm">+ Ejercicio</button>
               </div>
             ))}
           </div>
-          <button onClick={() => setRoutineDays([...routineDays, { dayName: `Día ${routineDays.length + 1}`, exercises: [{ id: null, name: '', targetSets: '', targetReps: '', targetRir: '' }] }])} className="w-full py-4 rounded-2xl bg-gray-800 text-white font-bold">+ Nuevo Día</button>
+          <button onClick={() => updateRoutineDays([...routineDays, { dayName: `Día ${routineDays.length + 1}`, exercises: [{ id: null, name: '', targetSets: '', targetReps: '', targetRir: '' }] }])} className="w-full py-4 rounded-2xl bg-gray-800 text-white font-bold">+ Nuevo Día</button>
         </div>
-        <button onClick={handleSaveRoutine} className="w-full bg-green-600 text-white font-bold text-xl px-5 py-5 rounded-3xl mt-4 shrink-0">Guardar</button>
+        <button
+          onClick={handleSaveRoutine}
+          disabled={savingRoutine}
+          className="w-full bg-green-600 text-white font-bold text-xl px-5 py-5 rounded-3xl mt-4 shrink-0 disabled:opacity-60"
+        >
+          {savingRoutine ? 'Guardando...' : 'Guardar'}
+        </button>
         {overlay}
       </div>
     );
@@ -1208,8 +1368,12 @@ export default function Home() {
         </div>
 
         <div className="mt-auto space-y-3 shrink-0 pt-4">
-          <button onClick={handleSaveSet} className={`w-full font-bold text-xl px-5 py-5 rounded-3xl active:scale-95 transition-all ${editingLogId ? 'bg-orange-600 text-white shadow-[0_0_20px_rgba(234,88,12,0.3)]' : 'bg-green-600 text-white shadow-[0_0_20px_rgba(22,163,74,0.3)]'}`}>
-            {editingLogId ? '✓ ACTUALIZAR SERIE' : '✓ GUARDAR SERIE'}
+          <button
+            onClick={handleSaveSet}
+            disabled={savingSet}
+            className={`w-full font-bold text-xl px-5 py-5 rounded-3xl active:scale-95 transition-all disabled:opacity-60 disabled:active:scale-100 ${editingLogId ? 'bg-orange-600 text-white shadow-[0_0_20px_rgba(234,88,12,0.3)]' : 'bg-green-600 text-white shadow-[0_0_20px_rgba(22,163,74,0.3)]'}`}
+          >
+            {savingSet ? 'Guardando...' : (editingLogId ? '✓ ACTUALIZAR SERIE' : '✓ GUARDAR SERIE')}
           </button>
           
           <div className="flex gap-3">
@@ -1271,16 +1435,22 @@ export default function Home() {
           />
           <button
             onClick={handleImportRoutine}
-            className="shrink-0 bg-green-600 text-white px-4 py-2 rounded-xl font-bold text-sm active:scale-95"
+            disabled={importing || !importCode.trim()}
+            className="shrink-0 bg-green-600 text-white px-4 py-2 rounded-xl font-bold text-sm active:scale-95 disabled:opacity-50 disabled:active:scale-100"
           >
-            Importar
+            {importing ? '...' : 'Importar'}
           </button>
         </div>
 
         {routines.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <h3 className="text-white font-bold text-xl">Sin rutinas</h3>
-            <p className="text-gray-500 text-sm mt-2">Crea una o importa la de un amigo.</p>
+          <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 text-center">
+            <div className="text-5xl mb-4" aria-hidden="true">🏋️</div>
+            <h3 className="text-white font-bold text-lg mb-2">Empieza por tu primera rutina</h3>
+            <p className="text-gray-400 text-sm leading-relaxed">
+              Crea una rutina con tus días y ejercicios, o importa una existente
+              pegando su código arriba. Cada rutina es una plantilla: la usas para
+              entrenar y se va guardando lo que haces serie a serie.
+            </p>
           </div>
         ) : (
           routines.map((routine) => {
