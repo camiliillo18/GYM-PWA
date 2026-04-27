@@ -247,6 +247,20 @@ export default function Home() {
     setEditingHistLog(null); await handleOpenHistory(); 
   };
 
+  const moveExercise = (dIdx, eIdx, direction) => {
+    setRoutineDays(prev => {
+      const u = [...prev];
+      const day = { ...u[dIdx] };
+      const exercises = [...day.exercises];
+      const newIdx = eIdx + direction;
+      if (newIdx < 0 || newIdx >= exercises.length) return prev;
+      [exercises[eIdx], exercises[newIdx]] = [exercises[newIdx], exercises[eIdx]];
+      day.exercises = exercises;
+      u[dIdx] = day;
+      return u;
+    });
+  };
+
   const handleOpenCreate = () => {
     setEditingRoutineId(null); setNewRoutineName('');
     setRoutineDays([{ dayName: 'Día 1', exercises: [{ id: null, name: '', targetSets: '', targetReps: '', targetRir: '' }] }]);
@@ -256,7 +270,8 @@ export default function Home() {
   const handleEditRoutine = (routine) => {
     setEditingRoutineId(routine.id); setNewRoutineName(routine.name);
     const daysMap = {};
-    routine.routine_exercises.forEach(ex => {
+    const sortedExs = [...routine.routine_exercises].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    sortedExs.forEach(ex => {
       const day = ex.day_name || 'Día 1';
       if (!daysMap[day]) daysMap[day] = [];
       daysMap[day].push({ id: ex.id, name: ex.name, targetSets: ex.target_sets || '', targetReps: ex.target_reps || '', targetRir: ex.target_rir || '' });
@@ -545,27 +560,42 @@ export default function Home() {
     return match ? Number(match[0]) : fallback;
   };
 
-  const loadDefaultsForExercise = async (exId, currentSessionLogsParam, routineInfo, weekMap) => {
+  const loadDefaultsForExercise = async (exercise, currentSessionLogsParam, routineInfo, weekMap) => {
+    const exId = exercise.id;
+    const targetReps = parseNumFromText(exercise?.target_reps, 10);
+    const targetRir = parseNumFromText(exercise?.target_rir, 2);
+
     const logsThisSession = currentSessionLogsParam.filter(l => l.routine_exercise_id === exId);
     if (logsThisSession.length > 0) {
       const lastLog = logsThisSession[logsThisSession.length - 1];
-      setWeight(lastLog.weight); setReps(lastLog.reps); setRir(lastLog.rir);
+      setWeight(lastLog.weight);
+      setReps(targetReps);
+      setRir(targetRir);
       return;
     }
+
     const effectiveRoutine = routineInfo !== undefined ? routineInfo : activeRoutine;
     const effectiveWeekMap = weekMap !== undefined ? weekMap : activeWeekTargets;
     if (effectiveRoutine?.has_weekly_plan) {
       const plan = effectiveWeekMap?.[exId];
       if (plan && plan.target_weight !== null && plan.target_weight !== undefined) {
         setWeight(Number(plan.target_weight));
-        setReps(parseNumFromText(plan.target_reps, 10));
-        setRir(parseNumFromText(plan.target_rir, 2));
+        setReps(parseNumFromText(plan.target_reps, targetReps));
+        setRir(parseNumFromText(plan.target_rir, targetRir));
         return;
       }
     }
-    const { data } = await supabase.from('workout_logs').select('weight, reps, rir').eq('routine_exercise_id', exId).order('created_at', { ascending: false }).limit(1).maybeSingle();
-    if (data) { setWeight(data.weight); setReps(data.reps); setRir(data.rir); }
-    else { setWeight(20); setReps(10); setRir(2); }
+
+    const { data } = await supabase
+      .from('workout_logs')
+      .select('weight')
+      .eq('routine_exercise_id', exId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    setWeight(data ? data.weight : 20);
+    setReps(targetReps);
+    setRir(targetRir);
   };
 
   const handleStartTraining = async (routine, exercises) => {
@@ -580,23 +610,79 @@ export default function Home() {
     };
     setActiveRoutine(routineInfo);
 
+    const exIds = sorted.map(e => e.id);
+
     let weekMap = {};
-    if (routineInfo.has_weekly_plan) {
-      const exIds = sorted.map(e => e.id);
-      if (exIds.length > 0) {
-        const { data } = await supabase
-          .from('exercise_week_targets')
-          .select('routine_exercise_id, target_weight, target_sets, target_reps, target_rir')
-          .in('routine_exercise_id', exIds)
-          .eq('week_number', routineInfo.current_week);
-        (data || []).forEach(t => { weekMap[t.routine_exercise_id] = t; });
-      }
+    if (routineInfo.has_weekly_plan && exIds.length > 0) {
+      const { data } = await supabase
+        .from('exercise_week_targets')
+        .select('routine_exercise_id, target_weight, target_sets, target_reps, target_rir')
+        .in('routine_exercise_id', exIds)
+        .eq('week_number', routineInfo.current_week);
+      (data || []).forEach(t => { weekMap[t.routine_exercise_id] = t; });
     }
     setActiveWeekTargets(weekMap);
 
-    setActiveExercises(sorted); setCurrentExIndex(0); setCurrentSet(1); setSessionLogs([]); setEditingLogId(null);
-    await loadDefaultsForExercise(sorted[0].id, [], routineInfo, weekMap);
-    setView('training'); setLoading(false);
+    let todaysLogs = [];
+    if (exIds.length > 0) {
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const { data } = await supabase
+        .from('workout_logs')
+        .select('id, routine_exercise_id, set_number, weight, reps, rir, created_at')
+        .in('routine_exercise_id', exIds)
+        .gte('created_at', startOfToday.toISOString())
+        .order('created_at', { ascending: true });
+      todaysLogs = data || [];
+    }
+
+    setLoading(false);
+
+    let initialSessionLogs = [];
+    let initialExIndex = 0;
+    let initialSet = 1;
+
+    if (todaysLogs.length > 0) {
+      const n = todaysLogs.length;
+      const continueSession = window.confirm(
+        `Tienes ${n} serie${n === 1 ? '' : 's'} ya registrada${n === 1 ? '' : 's'} hoy en este día.\n\n¿Continuar desde donde lo dejaste?`
+      );
+      if (continueSession) {
+        initialSessionLogs = todaysLogs;
+        const logsByEx = {};
+        todaysLogs.forEach(log => {
+          if (!logsByEx[log.routine_exercise_id]) logsByEx[log.routine_exercise_id] = [];
+          logsByEx[log.routine_exercise_id].push(log);
+        });
+        let foundIncomplete = false;
+        for (let i = 0; i < sorted.length; i++) {
+          const ex = sorted[i];
+          const exLogs = logsByEx[ex.id] || [];
+          const targetSetsStr = (weekMap[ex.id]?.target_sets) || ex.target_sets || "1";
+          const maxTargetSets = parseInt(targetSetsStr.split('-').pop()) || 1;
+          if (exLogs.length < maxTargetSets) {
+            initialExIndex = i;
+            initialSet = exLogs.length + 1;
+            foundIncomplete = true;
+            break;
+          }
+        }
+        if (!foundIncomplete) {
+          alert('¡Ya completaste todas las series de hoy en este día! 🏆');
+          return;
+        }
+      }
+    }
+
+    setLoading(true);
+    setActiveExercises(sorted);
+    setCurrentExIndex(initialExIndex);
+    setCurrentSet(initialSet);
+    setSessionLogs(initialSessionLogs);
+    setEditingLogId(null);
+    await loadDefaultsForExercise(sorted[initialExIndex], initialSessionLogs, routineInfo, weekMap);
+    setView('training');
+    setLoading(false);
   };
 
   const handleSaveSet = async () => {
@@ -631,7 +717,7 @@ export default function Home() {
       setCurrentExIndex(nextIndex); const logsForNextEx = currentLogs.filter(l => l.routine_exercise_id === nextEx.id);
       const maxTargetSets = parseInt(getEffectiveTargetSets(nextEx).split('-').pop());
       if (logsForNextEx.length >= maxTargetSets && logsForNextEx.length > 0) { handleLoadLogForEdit(logsForNextEx[logsForNextEx.length - 1]); } 
-      else { setCurrentSet(logsForNextEx.length + 1); setEditingLogId(null); await loadDefaultsForExercise(nextEx.id, currentLogs); }
+      else { setCurrentSet(logsForNextEx.length + 1); setEditingLogId(null); await loadDefaultsForExercise(nextEx, currentLogs); }
       setLoading(false);
     } else { alert("¡Entrenamiento finalizado! 🏆"); setView('dashboard'); }
   };
@@ -642,7 +728,7 @@ export default function Home() {
       setCurrentExIndex(prevIndex); const logsForPrevEx = sessionLogs.filter(l => l.routine_exercise_id === prevEx.id);
       const maxTargetSets = parseInt(getEffectiveTargetSets(prevEx).split('-').pop());
       if (logsForPrevEx.length >= maxTargetSets && logsForPrevEx.length > 0) { handleLoadLogForEdit(logsForPrevEx[logsForPrevEx.length - 1]); } 
-      else { setCurrentSet(logsForPrevEx.length + 1); setEditingLogId(null); await loadDefaultsForExercise(prevEx.id, sessionLogs); }
+      else { setCurrentSet(logsForPrevEx.length + 1); setEditingLogId(null); await loadDefaultsForExercise(prevEx, sessionLogs); }
       setLoading(false);
     }
   };
@@ -792,9 +878,30 @@ export default function Home() {
                 <input type="text" value={day.dayName} onChange={(e) => { const u = [...routineDays]; u[dIdx].dayName = e.target.value; setRoutineDays(u); }} className="bg-transparent text-blue-500 font-bold text-xl mb-4 w-full outline-none" placeholder="Día..."/>
                 <div className="space-y-4">
                   {day.exercises.map((ex, eIdx) => (
-                    <div key={eIdx} className="bg-black p-3 rounded-2xl border border-gray-800 space-y-3 relative group">
-                      <input type="text" placeholder="Ejercicio" value={ex.name} onChange={(e) => { const u = [...routineDays]; u[dIdx].exercises[eIdx].name = e.target.value; setRoutineDays(u); }} className="w-full bg-transparent text-white px-2 py-1 outline-none text-lg font-bold border-b border-gray-800 pr-8"/>
-                      <button aria-label="Quitar ejercicio" onClick={() => { const u = [...routineDays]; u[dIdx].exercises.splice(eIdx, 1); setRoutineDays(u); }} className="absolute top-1 right-1 w-9 h-9 flex items-center justify-center text-gray-500 active:text-red-500 active:scale-90">✕</button>
+                    <div key={eIdx} className="bg-black p-3 rounded-2xl border border-gray-800 space-y-3">
+                      <div className="flex justify-end gap-1">
+                        <button
+                          type="button"
+                          aria-label="Subir ejercicio"
+                          onClick={() => moveExercise(dIdx, eIdx, -1)}
+                          disabled={eIdx === 0}
+                          className="w-8 h-8 flex items-center justify-center text-gray-400 disabled:opacity-25 active:text-white active:scale-90 text-sm"
+                        >▲</button>
+                        <button
+                          type="button"
+                          aria-label="Bajar ejercicio"
+                          onClick={() => moveExercise(dIdx, eIdx, +1)}
+                          disabled={eIdx === day.exercises.length - 1}
+                          className="w-8 h-8 flex items-center justify-center text-gray-400 disabled:opacity-25 active:text-white active:scale-90 text-sm"
+                        >▼</button>
+                        <button
+                          type="button"
+                          aria-label="Quitar ejercicio"
+                          onClick={() => { const u = [...routineDays]; u[dIdx].exercises.splice(eIdx, 1); setRoutineDays(u); }}
+                          className="w-8 h-8 flex items-center justify-center text-gray-500 active:text-red-500 active:scale-90"
+                        >✕</button>
+                      </div>
+                      <input type="text" placeholder="Ejercicio" value={ex.name} onChange={(e) => { const u = [...routineDays]; u[dIdx].exercises[eIdx].name = e.target.value; setRoutineDays(u); }} className="w-full bg-transparent text-white px-2 py-1 outline-none text-lg font-bold border-b border-gray-800"/>
                       <div className="flex gap-2">
                         {['Sets', 'Reps', 'Rir'].map(f => (
                           <div key={f} className="flex-1">
@@ -1075,6 +1182,7 @@ export default function Home() {
               const day = ex.day_name || 'Día 1';
               if (!acc[day]) acc[day] = []; acc[day].push(ex); return acc;
             }, {});
+            Object.keys(daysMap).forEach(d => daysMap[d].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)));
             
             return (
               <div key={routine.id} className="bg-gray-900 p-5 rounded-3xl border border-gray-800 transition-all overflow-hidden">
