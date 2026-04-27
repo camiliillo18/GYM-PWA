@@ -52,6 +52,25 @@ export default function Home() {
 
   const [installPromptEvent, setInstallPromptEvent] = useState(null);
 
+  const [dialog, setDialog] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  const showDialog = (opts) => new Promise((resolve) => {
+    setDialog({
+      type: 'alert',
+      variant: 'default',
+      ...opts,
+      onConfirm: () => { setDialog(null); resolve(true); },
+      onCancel: () => { setDialog(null); resolve(false); },
+    });
+  });
+  const showAlert = (message, opts = {}) => showDialog({ ...opts, type: 'alert', message });
+  const showConfirm = (message, opts = {}) => showDialog({ ...opts, type: 'confirm', message });
+  const showToast = (message, variant = 'success', durationMs = 2200) => {
+    setToast({ message, variant });
+    setTimeout(() => setToast(prev => (prev && prev.message === message ? null : prev)), durationMs);
+  };
+
   const fetchRoutines = async () => {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
@@ -136,17 +155,17 @@ export default function Home() {
     e.preventDefault();
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) alert("Error: " + error.message);
+    if (error) showAlert(error.message, { title: 'Error de inicio de sesión', variant: 'danger' });
     setLoading(false);
   };
 
   const handleSignUp = async (e) => {
     e.preventDefault();
-    if (!confirm("¿Crear cuenta nueva?")) return;
+    if (!await showConfirm('¿Crear una cuenta nueva con este email?', { title: 'Nueva cuenta' })) return;
     setLoading(true);
     const { error } = await supabase.auth.signUp({ email, password });
-    if (error) alert("Error: " + error.message);
-    else alert("¡Cuenta creada! Ya puedes entrar.");
+    if (error) showAlert(error.message, { title: 'Error al crear cuenta', variant: 'danger' });
+    else showToast('¡Cuenta creada! Ya puedes entrar.');
     setLoading(false);
   };
 
@@ -156,14 +175,14 @@ export default function Home() {
     if (!importCode.trim()) return;
     setLoading(true);
     const { data: originalRoutine, error: rError } = await supabase.from('routines').select('*, routine_exercises(*)').eq('share_code', importCode.trim()).single();
-    if (rError || !originalRoutine) { alert("No se encontró ninguna rutina con ese código."); setLoading(false); return; }
+    if (rError || !originalRoutine) { showAlert('No se encontró ninguna rutina con ese código.', { variant: 'danger' }); setLoading(false); return; }
     const { data: newRoutine, error: nError } = await supabase.from('routines').insert([{
       name: originalRoutine.name + " (Copia)",
       has_weekly_plan: !!originalRoutine.has_weekly_plan,
       total_weeks: originalRoutine.total_weeks || 0,
       current_week: 1,
     }]).select().single();
-    if (nError) { alert("Error al clonar: " + nError.message); setLoading(false); return; }
+    if (nError) { showAlert(nError.message, { title: 'Error al clonar la rutina', variant: 'danger' }); setLoading(false); return; }
 
     const oldExIds = originalRoutine.routine_exercises.map(e => e.id);
     const newExercises = originalRoutine.routine_exercises.map(ex => ({
@@ -196,7 +215,7 @@ export default function Home() {
       }
     }
 
-    alert("¡Rutina importada con éxito!"); setImportCode(''); fetchRoutines(); setLoading(false);
+    showToast('¡Rutina importada con éxito!'); setImportCode(''); fetchRoutines(); setLoading(false);
   };
 
   const handleOpenHistory = async () => {
@@ -221,7 +240,7 @@ export default function Home() {
 
   const handleCopyHistory = async () => {
     const datesToCopy = Object.keys(selectedDates).filter(date => selectedDates[date]);
-    if (datesToCopy.length === 0) return alert("Selecciona algún día.");
+    if (datesToCopy.length === 0) { showAlert('Selecciona al menos un día para copiar.'); return; }
     let text = "";
     historyData.forEach(day => {
       if (selectedDates[day.date]) {
@@ -233,7 +252,7 @@ export default function Home() {
         });
       }
     });
-    try { await navigator.clipboard.writeText(text.trim()); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch (err) { alert("Error al copiar."); }
+    try { await navigator.clipboard.writeText(text.trim()); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { showAlert('No se pudo copiar al portapapeles.', { variant: 'danger' }); }
   };
 
   const saveHistoryLog = async () => {
@@ -242,7 +261,7 @@ export default function Home() {
   };
 
   const deleteHistoryLog = async (id) => {
-    if(!window.confirm("¿Borrar serie?")) return;
+    if (!await showConfirm('¿Borrar esta serie? No se puede deshacer.', { title: 'Borrar serie', variant: 'danger', confirmText: 'Borrar' })) return;
     setLoading(true); await supabase.from('workout_logs').delete().eq('id', id);
     setEditingHistLog(null); await handleOpenHistory(); 
   };
@@ -282,7 +301,7 @@ export default function Home() {
   };
 
   const handleDeleteRoutine = async (id) => {
-    if (!window.confirm("¿Borrar rutina?")) return;
+    if (!await showConfirm('¿Borrar la rutina entera? Se perderán los ejercicios y la programación. El historial se mantiene.', { title: 'Borrar rutina', variant: 'danger', confirmText: 'Borrar' })) return;
     setLoading(true); await supabase.from('routines').delete().eq('id', id);
     fetchRoutines(); setLoading(false);
   };
@@ -446,7 +465,7 @@ export default function Home() {
 
   const handleTogglePlanOff = async () => {
     if (!programmingRoutine) return;
-    if (!window.confirm('¿Apagar la programación? Se borrarán los datos por semana. Las rutinas y el historial se conservan.')) return;
+    if (!await showConfirm('Se borrarán los datos por semana. Las rutinas y el historial se conservan.', { title: 'Apagar programación', variant: 'danger', confirmText: 'Apagar' })) return;
     setLoading(true);
     const routineId = programmingRoutine.id;
     const exIds = (programmingRoutine.routine_exercises || []).map(e => e.id);
@@ -513,13 +532,13 @@ export default function Home() {
   };
 
   const handleSaveRoutine = async () => {
-    if (!newRoutineName.trim()) return alert("Ponle nombre.");
+    if (!newRoutineName.trim()) { showAlert('Ponle un nombre a la rutina antes de guardar.'); return; }
     let validationFailed = false; let hasValidExercises = false;
     for (const day of routineDays) {
       const validExs = day.exercises.filter(ex => ex.name.trim() !== '');
       if (validExs.length > 0) hasValidExercises = true;
       for (const ex of validExs) {
-        if (!ex.targetSets.trim() || !ex.targetReps.trim() || !ex.targetRir.trim()) { alert(`Faltan datos en "${ex.name}"`); validationFailed = true; break; }
+        if (!ex.targetSets.trim() || !ex.targetReps.trim() || !ex.targetRir.trim()) { showAlert(`Faltan datos en "${ex.name}". Rellena sets, reps y RIR.`); validationFailed = true; break; }
       }
       if (validationFailed) break;
     }
@@ -644,8 +663,9 @@ export default function Home() {
 
     if (todaysLogs.length > 0) {
       const n = todaysLogs.length;
-      const continueSession = window.confirm(
-        `Tienes ${n} serie${n === 1 ? '' : 's'} ya registrada${n === 1 ? '' : 's'} hoy en este día.\n\n¿Continuar desde donde lo dejaste?`
+      const continueSession = await showConfirm(
+        `Tienes ${n} serie${n === 1 ? '' : 's'} ya registrada${n === 1 ? '' : 's'} hoy en este día.\n\n¿Continuar desde donde lo dejaste?`,
+        { title: 'Sesión en curso', confirmText: 'Continuar', cancelText: 'Empezar de cero' }
       );
       if (continueSession) {
         initialSessionLogs = todaysLogs;
@@ -668,7 +688,7 @@ export default function Home() {
           }
         }
         if (!foundIncomplete) {
-          alert('¡Ya completaste todas las series de hoy en este día! 🏆');
+          showAlert('Ya completaste todas las series de hoy en este día.', { title: '¡Día terminado! 🏆', variant: 'default' });
           return;
         }
       }
@@ -719,7 +739,7 @@ export default function Home() {
       if (logsForNextEx.length >= maxTargetSets && logsForNextEx.length > 0) { handleLoadLogForEdit(logsForNextEx[logsForNextEx.length - 1]); } 
       else { setCurrentSet(logsForNextEx.length + 1); setEditingLogId(null); await loadDefaultsForExercise(nextEx, currentLogs); }
       setLoading(false);
-    } else { alert("¡Entrenamiento finalizado! 🏆"); setView('dashboard'); }
+    } else { showAlert('Buen trabajo. Las series quedan guardadas en el historial.', { title: '¡Entrenamiento finalizado! 🏆' }); setView('dashboard'); }
   };
 
   const handlePrevExercise = async () => {
@@ -732,6 +752,84 @@ export default function Home() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!dialog) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        if (dialog.type === 'confirm') dialog.onCancel(); else dialog.onConfirm();
+      } else if (e.key === 'Enter') {
+        dialog.onConfirm();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [dialog]);
+
+  const overlay = (
+    <>
+      {dialog && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4 animate-in fade-in"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && dialog.type === 'alert') dialog.onConfirm();
+          }}
+          style={{
+            paddingTop: 'max(1rem, env(safe-area-inset-top))',
+            paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+          }}
+        >
+          <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in slide-in-from-top-2">
+            {dialog.title && (
+              <h3 className="text-white font-bold text-xl mb-2">{dialog.title}</h3>
+            )}
+            <p className="text-gray-300 text-base whitespace-pre-line leading-relaxed">{dialog.message}</p>
+            <div className="flex gap-2 mt-6">
+              {dialog.type === 'confirm' && (
+                <button
+                  type="button"
+                  onClick={dialog.onCancel}
+                  className="flex-1 bg-gray-800 text-white py-3 rounded-2xl font-bold active:scale-95"
+                >
+                  {dialog.cancelText || 'Cancelar'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={dialog.onConfirm}
+                className={`flex-1 text-white py-3 rounded-2xl font-bold active:scale-95 ${
+                  dialog.variant === 'danger'
+                    ? 'bg-red-600 shadow-[0_0_15px_rgba(220,38,38,0.3)]'
+                    : 'bg-green-600 shadow-[0_0_15px_rgba(22,163,74,0.3)]'
+                }`}
+              >
+                {dialog.confirmText || (dialog.type === 'confirm' ? 'Confirmar' : 'OK')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div
+          className="fixed left-4 right-4 z-50 flex justify-center pointer-events-none animate-in fade-in slide-in-from-bottom-2"
+          style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+        >
+          <div
+            className={`px-5 py-3 rounded-2xl border max-w-sm text-sm font-bold shadow-2xl pointer-events-auto ${
+              toast.variant === 'success'
+                ? 'bg-green-600 border-green-500 text-white'
+                : toast.variant === 'danger'
+                  ? 'bg-red-600 border-red-500 text-white'
+                  : 'bg-gray-900 border-gray-700 text-white'
+            }`}
+          >
+            {toast.message}
+          </div>
+        </div>
+      )}
+    </>
+  );
 
   // --- RENDERS ---
   const haptic = (ms = 8) => {
@@ -756,7 +854,7 @@ export default function Home() {
     } catch {}
   };
 
-  if (loading) return <div className="flex h-[100dvh] items-center justify-center bg-black"><div className="w-8 h-8 border-4 border-gray-800 border-t-green-500 rounded-full animate-spin"></div></div>;
+  if (loading) return (<><div className="flex h-[100dvh] items-center justify-center bg-black"><div className="w-8 h-8 border-4 border-gray-800 border-t-green-500 rounded-full animate-spin"></div></div>{overlay}</>);
 
   if (!session) {
     return (
@@ -770,6 +868,7 @@ export default function Home() {
             <button type="button" onClick={handleSignUp} className="w-full bg-transparent text-gray-500 font-bold text-sm py-2 active:text-white transition-colors">¿No tienes cuenta? Crear cuenta</button>
           </form>
         </div>
+        {overlay}
       </div>
     );
   }
@@ -862,6 +961,7 @@ export default function Home() {
             ))
           }
         </div>
+        {overlay}
       </div>
     );
   }
@@ -926,6 +1026,7 @@ export default function Home() {
           <button onClick={() => setRoutineDays([...routineDays, { dayName: `Día ${routineDays.length + 1}`, exercises: [{ id: null, name: '', targetSets: '', targetReps: '', targetRir: '' }] }])} className="w-full py-4 rounded-2xl bg-gray-800 text-white font-bold">+ Nuevo Día</button>
         </div>
         <button onClick={handleSaveRoutine} className="w-full bg-green-600 text-white font-bold text-xl px-5 py-5 rounded-3xl mt-4 shrink-0">Guardar</button>
+        {overlay}
       </div>
     );
   }
@@ -1040,6 +1141,7 @@ export default function Home() {
             Guardar
           </button>
         )}
+        {overlay}
       </div>
     );
   }
@@ -1053,8 +1155,11 @@ export default function Home() {
       <div className="flex flex-col h-[100dvh] bg-black px-6 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] animate-in fade-in">
         <header className="flex justify-between items-center mb-8 shrink-0">
           <button
-            onClick={() => {
-              if (sessionLogs.length > 0 && !window.confirm('¿Salir del entrenamiento? Las series ya guardadas no se pierden.')) return;
+            onClick={async () => {
+              if (sessionLogs.length > 0) {
+                const ok = await showConfirm('Las series ya guardadas no se pierden.', { title: '¿Salir del entrenamiento?', variant: 'danger', confirmText: 'Salir' });
+                if (!ok) return;
+              }
               setView('dashboard');
             }}
             className="text-gray-400 px-3 py-2 -ml-3 text-lg"
@@ -1118,6 +1223,7 @@ export default function Home() {
             </button>
           </div>
         </div>
+        {overlay}
       </div>
     );
   }
@@ -1270,6 +1376,7 @@ export default function Home() {
         )}
       </div>
       <button onClick={handleOpenCreate} className="w-full bg-green-600 text-white font-bold text-lg px-5 py-5 rounded-3xl mt-4 shrink-0">+ NUEVA RUTINA</button>
+      {overlay}
     </div>
   );
 }
