@@ -129,32 +129,44 @@ export default function Home() {
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      if (session) await fetchRoutines();
-      setLoading(false);
-    });
+    let cancelled = false;
+
+    // Salvavidas: si por lo que sea (red caída, Supabase colgado, etc.) nada
+    // resuelve en 10s, soltamos el spinner para que el usuario vea login y
+    // pueda actuar en lugar de quedarse mirando la rueda.
+    const safetyTimeout = setTimeout(() => {
+      if (!cancelled) setLoading(false);
+    }, 10000);
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (cancelled) return;
       setSession(session);
       if (session) {
-        if (event === 'SIGNED_IN') {
-          setLoading(true);
-          await fetchRoutines();
-          setLoading(false);
+        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+          try {
+            await fetchRoutines();
+          } catch (e) {
+            console.error('fetchRoutines failed:', e);
+          } finally {
+            if (!cancelled) setLoading(false);
+          }
         } else {
-          fetchRoutines();
+          fetchRoutines().catch(e => console.error('fetchRoutines (bg) failed:', e));
         }
-      } else if (event === 'SIGNED_OUT') {
-        setView('dashboard');
-        setRoutines([]);
-        setActiveExercises([]);
-        setSessionLogs([]);
-        setActiveRoutine(null);
-        setActiveWeekTargets({});
-        setEditingRoutineId(null);
-        setRoutineDirty(false);
-        setEditingHistLog(null);
-        setHistoryData([]);
+      } else {
+        if (event === 'SIGNED_OUT') {
+          setView('dashboard');
+          setRoutines([]);
+          setActiveExercises([]);
+          setSessionLogs([]);
+          setActiveRoutine(null);
+          setActiveWeekTargets({});
+          setEditingRoutineId(null);
+          setRoutineDirty(false);
+          setEditingHistLog(null);
+          setHistoryData([]);
+        }
+        if (!cancelled) setLoading(false);
       }
     });
 
@@ -171,6 +183,8 @@ export default function Home() {
     window.addEventListener('appinstalled', onInstalled);
 
     return () => {
+      cancelled = true;
+      clearTimeout(safetyTimeout);
       subscription.unsubscribe();
       window.removeEventListener('beforeinstallprompt', onBeforeInstall);
       window.removeEventListener('appinstalled', onInstalled);
