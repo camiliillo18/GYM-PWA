@@ -25,7 +25,8 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   
   const [routines, setRoutines] = useState([]);
-  const [view, setView] = useState('dashboard'); 
+  const [routinesLoaded, setRoutinesLoaded] = useState(false);
+  const [view, setView] = useState('dashboard');
   
   const [editingRoutineId, setEditingRoutineId] = useState(null); 
   const [newRoutineName, setNewRoutineName] = useState('');
@@ -147,6 +148,9 @@ export default function Home() {
           setDashboardWeekTargets({});
         }
       }
+      // Marca que ya intentamos cargar rutinas (con o sin resultado), para no
+      // parpadear el estado vacío mientras llega la primera respuesta.
+      setRoutinesLoaded(true);
     }
   };
 
@@ -154,12 +158,11 @@ export default function Home() {
     let cancelled = false;
     let draftRestored = false;
 
-    // Salvavidas: si por lo que sea (red caída, Supabase colgado, etc.) nada
-    // resuelve en 10s, soltamos el spinner para que el usuario vea login y
-    // pueda actuar en lugar de quedarse mirando la rueda.
+    // Salvavidas (backstop): si no llegara ningún evento de auth, soltamos el
+    // spinner a los 6s para que el usuario vea login en vez de la rueda.
     const safetyTimeout = setTimeout(() => {
       if (!cancelled) setLoading(false);
-    }, 10000);
+    }, 6000);
 
     // Restaura un borrador (editor o entreno) si quedó algo a medias. Se llama
     // diferido desde el callback de auth (no en el cuerpo del efecto) y solo
@@ -195,6 +198,11 @@ export default function Home() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (cancelled) return;
       setSession(session);
+      // El spinner a pantalla completa SOLO espera a saber si hay sesión (algo
+      // local y rápido), NUNCA a la red. Lo soltamos aquí en cuanto auth
+      // resuelve; las rutinas cargan después en 2º plano. Así, si una petición
+      // se cuelga al volver a la pestaña, el spinner ya no se queda pillado.
+      setLoading(false);
       if (session) {
         // IMPORTANTE: no usar await ni llamar a métodos de auth de Supabase
         // dentro de este callback (el cliente tiene cogido un lock interno y
@@ -204,26 +212,40 @@ export default function Home() {
         setTimeout(() => {
           if (cancelled) return;
           restoreDrafts();
-          fetchRoutines(uid)
-            .catch(e => console.error('fetchRoutines failed:', e))
-            .finally(() => { if (!cancelled) setLoading(false); });
+          fetchRoutines(uid).catch(e => console.error('fetchRoutines failed:', e));
         }, 0);
-      } else {
-        if (event === 'SIGNED_OUT') {
-          setView('dashboard');
-          setRoutines([]);
-          setActiveExercises([]);
-          setSessionLogs([]);
-          setActiveRoutine(null);
-          setActiveWeekTargets({});
-          setEditingRoutineId(null);
-          setRoutineDirty(false);
-          setEditingHistLog(null);
-          setHistoryData([]);
-        }
-        if (!cancelled) setLoading(false);
+      } else if (event === 'SIGNED_OUT') {
+        setView('dashboard');
+        setRoutines([]);
+        setRoutinesLoaded(false);
+        setActiveExercises([]);
+        setSessionLogs([]);
+        setActiveRoutine(null);
+        setActiveWeekTargets({});
+        setEditingRoutineId(null);
+        setRoutineDirty(false);
+        setEditingHistLog(null);
+        setHistoryData([]);
       }
     });
+
+    // Al volver a la pestaña (cambio de app, minimizar, restaurar de bfcache)
+    // nunca debemos quedarnos en el spinner de arranque: lo soltamos y
+    // refrescamos las rutinas en 2º plano. El escape del spinner NO depende de
+    // la red, así que aunque getSession/fetch se cuelguen, la UI responde.
+    const refreshOnResume = () => {
+      if (cancelled || (typeof document !== 'undefined' && document.visibilityState !== 'visible')) return;
+      setLoading(false);
+      supabase.auth.getSession()
+        .then(({ data: { session } }) => {
+          if (cancelled || !session) return;
+          fetchRoutines(session.user.id).catch(() => {});
+        })
+        .catch(() => {});
+    };
+    const onPageShow = (e) => { if (e.persisted) refreshOnResume(); };
+    document.addEventListener('visibilitychange', refreshOnResume);
+    window.addEventListener('pageshow', onPageShow);
 
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
@@ -241,6 +263,8 @@ export default function Home() {
       cancelled = true;
       clearTimeout(safetyTimeout);
       subscription.unsubscribe();
+      document.removeEventListener('visibilitychange', refreshOnResume);
+      window.removeEventListener('pageshow', onPageShow);
       window.removeEventListener('beforeinstallprompt', onBeforeInstall);
       window.removeEventListener('appinstalled', onInstalled);
     };
@@ -1543,7 +1567,11 @@ export default function Home() {
           </button>
         </div>
 
-        {routines.length === 0 ? (
+        {routines.length === 0 && !routinesLoaded ? (
+          <div className="flex justify-center py-10">
+            <div className="w-6 h-6 border-4 border-gray-800 border-t-green-500 rounded-full animate-spin"></div>
+          </div>
+        ) : routines.length === 0 ? (
           <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 text-center">
             <div className="text-5xl mb-4" aria-hidden="true">🏋️</div>
             <h3 className="text-white font-bold text-lg mb-2">Empieza por tu primera rutina</h3>
