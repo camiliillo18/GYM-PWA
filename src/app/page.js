@@ -1,8 +1,22 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import Stepper from '../components/Stepper';
+
+// Borradores locales: para no perder lo que estás haciendo si la app se
+// recarga (cambio de app, kill de iOS, etc.).
+const DRAFT_EDITOR_KEY = 'gympwa:draft:editor';
+const DRAFT_TRAINING_KEY = 'gympwa:draft:training';
+const readDraft = (key) => {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch { return null; }
+};
+const writeDraft = (key, value) => {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+};
+const clearDraft = (key) => {
+  try { localStorage.removeItem(key); } catch {}
+};
 
 export default function Home() {
   const [session, setSession] = useState(null);
@@ -80,14 +94,22 @@ export default function Home() {
     setTimeout(() => setToast(prev => (prev && prev.message === message ? null : prev)), durationMs);
   };
 
-  const fetchRoutines = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+  const fetchRoutines = async (userId) => {
+    // El userId se pasa desde el callback de auth para NO llamar a
+    // supabase.auth.getUser() dentro de onAuthStateChange (provoca deadlock
+    // con el lock interno de auth → spinner infinito). En el resto de llamadas
+    // (fuera del callback) es seguro resolverlo aquí.
+    let uid = userId;
+    if (!uid) {
+      const { data: { user } } = await supabase.auth.getUser();
+      uid = user?.id;
+    }
 
-    if (user) {
+    if (uid) {
       const { data, error } = await supabase
         .from('routines')
         .select(`id, name, share_code, has_weekly_plan, total_weeks, current_week, completed_weeks, routine_exercises (id, name, sort_order, day_name, target_sets, target_reps, target_rir)`)
-        .eq('user_id', user.id)
+        .eq('user_id', uid)
         .order('created_at', { ascending: false });
 
       if (!error && data) {
@@ -130,6 +152,7 @@ export default function Home() {
 
   useEffect(() => {
     let cancelled = false;
+    let draftRestored = false;
 
     // Salvavidas: si por lo que sea (red caída, Supabase colgado, etc.) nada
     // resuelve en 10s, soltamos el spinner para que el usuario vea login y
@@ -138,21 +161,53 @@ export default function Home() {
       if (!cancelled) setLoading(false);
     }, 10000);
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    // Restaura un borrador (editor o entreno) si quedó algo a medias. Se llama
+    // diferido desde el callback de auth (no en el cuerpo del efecto) y solo
+    // una vez por montaje.
+    const restoreDrafts = () => {
+      if (draftRestored) return;
+      draftRestored = true;
+      const ed = readDraft(DRAFT_EDITOR_KEY);
+      if (ed && Array.isArray(ed.routineDays) && ed.routineDays.length > 0) {
+        setEditingRoutineId(ed.editingRoutineId ?? null);
+        setNewRoutineName(ed.newRoutineName ?? '');
+        setRoutineDays(ed.routineDays);
+        setRoutineDirty(true);
+        setView('creating');
+        return; // el editor tiene prioridad sobre el entreno
+      }
+      const tr = readDraft(DRAFT_TRAINING_KEY);
+      if (tr && Array.isArray(tr.activeExercises) && tr.activeExercises.length > 0) {
+        setActiveExercises(tr.activeExercises);
+        setActiveRoutine(tr.activeRoutine ?? null);
+        setActiveWeekTargets(tr.activeWeekTargets ?? {});
+        setSessionLogs(tr.sessionLogs ?? []);
+        setCurrentExIndex(tr.currentExIndex ?? 0);
+        setCurrentSet(tr.currentSet ?? 1);
+        setWeight(tr.weight ?? 20);
+        setReps(tr.reps ?? 10);
+        setRir(tr.rir ?? 2);
+        setEditingLogId(tr.editingLogId ?? null);
+        setView('training');
+      }
+    };
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (cancelled) return;
       setSession(session);
       if (session) {
-        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
-          try {
-            await fetchRoutines();
-          } catch (e) {
-            console.error('fetchRoutines failed:', e);
-          } finally {
-            if (!cancelled) setLoading(false);
-          }
-        } else {
-          fetchRoutines().catch(e => console.error('fetchRoutines (bg) failed:', e));
-        }
+        // IMPORTANTE: no usar await ni llamar a métodos de auth de Supabase
+        // dentro de este callback (el cliente tiene cogido un lock interno y
+        // se produce un deadlock). Diferimos el fetch con setTimeout(0) para
+        // salir del lock y le pasamos el user.id que ya viene en la sesión.
+        const uid = session.user.id;
+        setTimeout(() => {
+          if (cancelled) return;
+          restoreDrafts();
+          fetchRoutines(uid)
+            .catch(e => console.error('fetchRoutines failed:', e))
+            .finally(() => { if (!cancelled) setLoading(false); });
+        }, 0);
       } else {
         if (event === 'SIGNED_OUT') {
           setView('dashboard');
@@ -190,6 +245,31 @@ export default function Home() {
       window.removeEventListener('appinstalled', onInstalled);
     };
   }, []);
+
+  // Persiste el borrador del editor mientras editas (solo si hay cambios).
+  useEffect(() => {
+    if (view !== 'creating' || !routineDirty) return;
+    writeDraft(DRAFT_EDITOR_KEY, { editingRoutineId, newRoutineName, routineDays });
+  }, [view, routineDirty, editingRoutineId, newRoutineName, routineDays]);
+
+  // Persiste el borrador del entreno mientras entrenas.
+  useEffect(() => {
+    if (view !== 'training') return;
+    writeDraft(DRAFT_TRAINING_KEY, {
+      activeExercises, activeRoutine, activeWeekTargets, sessionLogs,
+      currentExIndex, currentSet, weight, reps, rir, editingLogId,
+    });
+  }, [view, activeExercises, activeRoutine, activeWeekTargets, sessionLogs, currentExIndex, currentSet, weight, reps, rir, editingLogId]);
+
+  // Al salir de una pantalla, limpia su borrador (ya no hay nada que recuperar).
+  // Saltamos el primer render: en el montaje view='dashboard' y borraría el
+  // borrador antes de que restoreDrafts pueda leerlo.
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) { didMountRef.current = true; return; }
+    if (view !== 'creating') clearDraft(DRAFT_EDITOR_KEY);
+    if (view !== 'training') clearDraft(DRAFT_TRAINING_KEY);
+  }, [view]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -404,6 +484,7 @@ export default function Home() {
   };
 
   const handleOpenCreate = () => {
+    clearDraft(DRAFT_EDITOR_KEY);
     setEditingRoutineId(null); setNewRoutineName('');
     setRoutineDays([{ dayName: 'Día 1', exercises: [{ id: null, name: '', targetSets: '', targetReps: '', targetRir: '' }] }]);
     setRoutineDirty(false);
@@ -411,6 +492,7 @@ export default function Home() {
   };
 
   const handleEditRoutine = (routine) => {
+    clearDraft(DRAFT_EDITOR_KEY);
     setEditingRoutineId(routine.id); setNewRoutineName(routine.name);
     const daysMap = {};
     const sortedExs = [...routine.routine_exercises].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
@@ -682,16 +764,21 @@ export default function Home() {
           if (ex.id) { d.id = ex.id; toUpdate.push(d); } else toInsert.push(d);
         });
       });
+      let insertedIds = [];
       if (toInsert.length > 0) {
-        const { error } = await supabase.from('routine_exercises').insert(toInsert);
+        const { data: inserted, error } = await supabase.from('routine_exercises').insert(toInsert).select('id');
         if (error) { showAlert('Algunos ejercicios no se pudieron guardar.', { variant: 'danger' }); return; }
+        insertedIds = (inserted || []).map(e => e.id);
       }
       if (toUpdate.length > 0) {
         const { error } = await supabase.from('routine_exercises').upsert(toUpdate);
         if (error) { showAlert('Algunos ejercicios no se pudieron actualizar.', { variant: 'danger' }); return; }
       }
       if (editingRoutineId) {
-        const kept = toUpdate.map(e => e.id);
+        // kept incluye los ejercicios actualizados Y los recién insertados.
+        // Sin los insertedIds, el delete borraba los ejercicios/días nuevos
+        // justo después de crearlos.
+        const kept = [...toUpdate.map(e => e.id), ...insertedIds];
         if (kept.length > 0) await supabase.from('routine_exercises').delete().eq('routine_id', currentId).not('id', 'in', `(${kept.join(',')})`);
         else await supabase.from('routine_exercises').delete().eq('routine_id', currentId);
       }
