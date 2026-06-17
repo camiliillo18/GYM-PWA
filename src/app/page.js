@@ -525,7 +525,9 @@ export default function Home() {
       if (!daysMap[day]) daysMap[day] = [];
       daysMap[day].push({ id: ex.id, name: ex.name, targetSets: ex.target_sets || '', targetReps: ex.target_reps || '', targetRir: ex.target_rir || '' });
     });
-    const formattedDays = Object.keys(daysMap).map(dayName => ({ dayName, exercises: daysMap[dayName] }));
+    const formattedDays = Object.keys(daysMap)
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+      .map(dayName => ({ dayName, exercises: daysMap[dayName] }));
     setRoutineDays(formattedDays.length > 0 ? formattedDays : [{ dayName: 'Día 1', exercises: [{ id: null, name: '', targetSets: '', targetReps: '', targetRir: '' }] }]);
     setRoutineDirty(false);
     setView('creating');
@@ -1378,7 +1380,7 @@ export default function Home() {
                 )}
               </div>
 
-              {Object.entries(daysMap).map(([dayName, exercises]) => (
+              {Object.keys(daysMap).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map(dayName => { const exercises = daysMap[dayName]; return (
                 <div key={dayName} className="bg-gray-900/50 p-4 rounded-3xl border border-gray-800">
                   <h4 className="text-green-500 font-bold text-xl mb-4">{dayName}</h4>
                   <div className="space-y-3">
@@ -1412,7 +1414,7 @@ export default function Home() {
                     })}
                   </div>
                 </div>
-              ))}
+              );})}
 
               <button onClick={handleTogglePlanOff} className="w-full py-3 rounded-2xl border border-red-900/60 text-red-500 font-bold text-sm active:scale-95">
                 Apagar programación
@@ -1637,7 +1639,7 @@ export default function Home() {
                 
                 {expandedRoutines[routine.id] && (
                   <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
-                    {Object.entries(daysMap).map(([dayName, exercises]) => (
+                    {Object.keys(daysMap).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map(dayName => { const exercises = daysMap[dayName]; return (
                       <div key={dayName} className="bg-black p-4 rounded-2xl border border-gray-800 flex flex-col">
                         <div className="flex justify-between items-center mb-3">
                           <span className="text-green-500 font-bold text-lg">{dayName}</span>
@@ -1666,7 +1668,7 @@ export default function Home() {
                           Empezar
                         </button>
                       </div>
-                    ))}
+                    );})}
                   </div>
                 )}
               </div>
