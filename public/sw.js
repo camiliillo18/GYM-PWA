@@ -3,7 +3,7 @@
 // NO cachea datos (Supabase) ni peticiones cross-origin: los datos siempre
 // van por red para no servir información desactualizada.
 
-const CACHE = 'gympwa-shell-v1';
+const CACHE = 'gympwa-shell-v2';
 const SHELL_URLS = ['/', '/manifest.json', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -31,16 +31,36 @@ self.addEventListener('fetch', (event) => {
   // Solo gestionamos nuestro propio origen. Supabase y terceros van directos.
   if (url.origin !== self.location.origin) return;
 
-  // Navegaciones (cargar la página): red primero, caché si no hay red.
+  // Navegaciones (cargar la página): red primero con timeout, caché si la red
+  // falla o tarda demasiado. El timeout evita que una red colgada al reanudar
+  // la app deje la navegación pillada sin resolver nunca.
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((cache) => cache.put('/', copy)).catch(() => {});
-          return res;
-        })
-        .catch(() => caches.match('/').then((cached) => cached || caches.match(req)))
+      new Promise((resolve) => {
+        let settled = false;
+        const fallback = () =>
+          caches.match('/').then((cached) => cached || caches.match(req)).then((r) => r || fetch(req));
+        const timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          resolve(fallback());
+        }, 4000);
+        fetch(req)
+          .then((res) => {
+            const copy = res.clone();
+            caches.open(CACHE).then((cache) => cache.put('/', copy)).catch(() => {});
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(res);
+          })
+          .catch(() => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(fallback());
+          });
+      })
     );
     return;
   }
